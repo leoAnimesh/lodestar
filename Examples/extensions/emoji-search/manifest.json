@@ -1,0 +1,10 @@
+{
+  "name": "emoji-search",
+  "title": "Emoji",
+  "description": "Search a small emoji table and paste the result",
+  "icon": "😀",
+  "run": ["node", "index.js"],
+  "commands": [
+    { "name": "search", "title": "Search Emoji", "mode": "list", "keywords": ["emoji", "symbol"] }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "uuid",
+  "title": "UUID",
+  "icon": "sf:number",
+  "run": ["node", "index.js"],
+  "commands": [
+    { "name": "copy-uuid", "title": "Copy New UUID", "mode": "no-view", "keywords": ["guid", "random"] }
+  ]
+}
