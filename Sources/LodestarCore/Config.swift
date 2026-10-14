@@ -25,6 +25,52 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
         }
         return config
     }
+
+    /// Keys this type owns in config.json. Any other keys are left untouched on save.
+    static let knownKeys = ["hotkey", "appDirectories", "clipboardHistoryLimit", "clipboardHistoryEnabled"]
+
+    /// Reads the config at `url`, applies `change`, and writes it back atomically.
+    /// Unknown keys are preserved. If the file exists but can't be parsed, nothing
+    /// is written and `ConfigError.invalidFile` is thrown, so a typo in a
+    /// hand-edited file is never silently overwritten.
+    @discardableResult
+    public static func update(at url: URL, _ change: (inout LodestarConfig) -> Void) throws -> LodestarConfig {
+        let existing = FileManager.default.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
+        let (data, config) = try updated(existing, change)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+        return config
+    }
+
+    /// Pure core of `update(at:_:)`: returns the new file contents and the resulting config.
+    public static func updated(_ existing: Data?, _ change: (inout LodestarConfig) -> Void) throws -> (Data, LodestarConfig) {
+        var object: [String: Any] = [:]
+        var config = LodestarConfig()
+        if let existing, !existing.allSatisfy({ $0 == 0x20 || $0 == 0x0A || $0 == 0x0D || $0 == 0x09 }) {
+            guard let parsed = try? JSONSerialization.jsonObject(with: existing) as? [String: Any],
+                  let decoded = try? JSONDecoder().decode(LodestarConfig.self, from: existing) else {
+                throw ConfigError.invalidFile
+            }
+            object = parsed
+            config = decoded
+        }
+        change(&config)
+        for key in knownKeys { object[key] = nil }
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as? [String: Any] ?? [:]
+        object.merge(encoded) { _, new in new }
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        return (data + Data("\n".utf8), config)
+    }
+}
+
+public enum ConfigError: Error, LocalizedError, Equatable {
+    case invalidFile
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidFile: return "config.json isn't valid. Fix or remove it, then try again."
+        }
+    }
 }
 
 public enum LodestarPaths {

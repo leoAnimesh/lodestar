@@ -8,7 +8,8 @@ An open-source, keyboard-driven launcher for macOS. Press **⌥Space**, type a f
 
 | Feature | Notes |
 | --- | --- |
-| Global hotkey | ⌥Space by default (Carbon `RegisterEventHotKey`; needs no permission). Configurable. |
+| Global hotkey | ⌥Space by default (Carbon `RegisterEventHotKey`; needs no permission). Change it in Settings with the shortcut recorder; it applies immediately, no restart. |
+| Settings window | Shortcut recorder, launch at login (`SMAppService`), clipboard-history options. Open it from the menu-bar item or with ⌘, in the launcher. |
 | Floating launcher panel | Non-activating `NSPanel`, so your current app stays frontmost and paste/window actions target it. |
 | App search | Scans `/Applications`, `/System/Applications`, `~/Applications`, etc. |
 | Fuzzy ranking | DP-based subsequence matcher with word-start/acronym/consecutive bonuses, blended with **frecency** (use count with a 7-day half-life). Matched letters are bolded. |
@@ -29,6 +30,7 @@ An open-source, keyboard-driven launcher for macOS. Press **⌥Space**, type a f
 | Return | Primary action |
 | ⌘Return | Secondary action |
 | ⌘K | Show all actions for the selected item |
+| ⌘, | Open Settings |
 | Esc | Close the detail view, go back, clear the query, then hide |
 
 ## Build & run
@@ -48,7 +50,7 @@ Lodestar runs as a menu-bar accessory: it has no Dock icon and shows a magnifyin
 
 **Permissions.** Window management, auto-paste (⌘V synthesis) and Lock Screen need **Accessibility** access. Grant it in System Settings › Privacy & Security › Accessibility, or use the status-bar menu item. Run the bundled `.app` rather than the bare binary, because otherwise macOS attributes the permission to your terminal. System commands that use Apple Events will prompt for **Automation** the first time.
 
-**Hotkey conflicts.** If another app (for example another launcher) already owns ⌥Space, registration fails and a message is logged. Change the hotkey in your config.
+**Hotkey conflicts.** If another app (for example another launcher) already owns ⌥Space, registration fails. At launch a message is logged. In Settings the recorder shows the error inline and keeps your previous shortcut. Pick a different one in **Settings…** from the menu-bar item.
 
 ## Configuration
 
@@ -63,7 +65,19 @@ Lodestar runs as a menu-bar accessory: it has no Dock icon and shows a magnifyin
 }
 ```
 
-Restart Lodestar after editing the config. Scripts and extensions can be reloaded live with the **Reload Scripts and Extensions** command.
+The Settings window reads and writes this same file. It rewrites only the keys it manages and leaves any other keys alone. If the file isn't valid JSON, Settings shows an error instead of overwriting it.
+
+- `hotkey` changes from Settings take effect immediately. The default (⌥Space) is stored by omitting the key.
+- Hand edits to the file, and the clipboard options, are read at launch, so restart Lodestar after changing them.
+- Scripts and extensions can be reloaded live with the **Reload Scripts and Extensions** command.
+
+## Settings
+
+Open **Settings…** from the menu-bar item, or press **⌘,** while the launcher is open.
+
+- **Shortcut.** Click the shortcut field, then press the new combo. It must include ⌘, ⌥ or ⌃ (Shift alone isn't enough). **Esc** cancels, and **Delete** restores ⌥Space. The new shortcut is registered right away and saved to `config.json` in the same `"option+space"` format the parser reads. While the field is recording, the global shortcut is paused so pressing the current combo doesn't toggle the launcher. If the combo can't be registered, an inline error appears and the previous shortcut stays active. macOS doesn't always report conflicts with other apps' shortcuts, so if the new combo does nothing, pick another.
+- **Launch at login.** Uses `SMAppService.mainApp` (macOS 13+). **This only works when running the bundled `build/Lodestar.app`** from `./scripts/bundle.sh`. When run via `swift run`, the toggle is disabled. If macOS asks for approval, Settings links to System Settings › General › Login Items. Move the app to a stable location (for example `/Applications`) before enabling it, since the login item points at the app's current path.
+- **Clipboard history.** Enable or disable it and set how many entries are kept. Applies on next launch.
 
 ## Script commands
 
@@ -162,13 +176,17 @@ Sources/
     FuzzyMatcher.swift     DP subsequence matcher + highlight indices
     Ranking.swift          Ranker + FrecencyStore (JSON persisted)
     Calculator.swift       recursive-descent evaluator
-    HotkeySpec.swift       "cmd+shift+k" -> Carbon key code / modifiers
+    HotkeySpec.swift       "cmd+shift+k" <-> Carbon key code / modifiers, ⌥Space display,
+                           recorder validation
     ScriptCommand.swift    script metadata parser
     ExtensionProtocol.swift manifest + wire messages + line framing
-    Config.swift           config file + paths
+    Config.swift           config file (load + key-preserving save) + paths
   Lodestar/                the app
     main.swift, AppDelegate.swift   accessory app, status item, key routing
-    GlobalHotKey.swift     Carbon RegisterEventHotKey wrapper
+    GlobalHotKey.swift     Carbon RegisterEventHotKey wrapper (live re-register, suspend)
+    SettingsWindow.swift   settings model, hotkey recorder event monitor, window
+    SettingsView.swift     SwiftUI settings form + recorder control
+    LaunchAtLogin.swift    SMAppService.mainApp wrapper
     LauncherPanel.swift    floating non-activating NSPanel + vibrancy
     LauncherViewModel.swift screen stack, selection, ⌘K action panel
     LauncherView.swift     SwiftUI UI
@@ -193,7 +211,6 @@ Lodestar deliberately takes a much simpler route. The UI is native SwiftUI, ther
 
 ## Roadmap
 
-- Settings UI with a hotkey recorder, and launch at login (`SMAppService`)
 - Snippets / text expansion (needs a `CGEventTap`, which requires Input Monitoring)
 - Quicklinks with `{query}` placeholders
 - Image clipboard entries; pinned entries

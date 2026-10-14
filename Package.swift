@@ -20,6 +20,7 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("Carbon"),
                 .linkedFramework("ApplicationServices"),
+                .linkedFramework("ServiceManagement"),
             ]
         ),
         .testTarget(name: "LodestarCoreTests", dependencies: ["LodestarCore"]),

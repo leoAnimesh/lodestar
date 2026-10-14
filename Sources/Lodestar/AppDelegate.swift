@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var clipboard: ClipboardHistory?
     private var config = LodestarConfig()
     private var hotkeySpec = HotkeySpec.default
+    private var openMenuItem: NSMenuItem?
+    private var settings: SettingsWindowController?  // created on first open
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         config = LodestarConfig.load(from: LodestarPaths.configFile)
@@ -64,9 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let raw = config.hotkey {
             if let spec = HotkeySpec(raw) { hotkeySpec = spec } else { NSLog("Lodestar: invalid hotkey '\(raw)', using default") }
         }
-        hotKey = GlobalHotKey(spec: hotkeySpec) { [weak self] in self?.togglePanel() }
-        if hotKey == nil {
-            NSLog("Lodestar: could not register \(hotkeySpec) — it may be taken by another app (Spotlight uses ⌘Space).")
+        let hotKey = GlobalHotKey { [weak self] in self?.togglePanel() }
+        self.hotKey = hotKey
+        do {
+            try hotKey.register(hotkeySpec)
+        } catch {
+            NSLog("Lodestar: could not register \(hotkeySpec) — it may be taken by another app (Spotlight uses ⌘Space). \(error.localizedDescription)")
         }
     }
 
@@ -104,7 +109,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// text field so they work regardless of SwiftUI focus details.
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.window === self.panel else { return event }
+            guard let self else { return event }
+            if let settings = self.settings, event.window === settings.window, !settings.model.isRecording,
+               event.modifierFlags.contains(.command), event.keyCode == 13 {  // ⌘W (no main menu in an accessory app)
+                settings.window.performClose(nil)
+                return nil
+            }
+            guard event.window === self.panel else { return event }
             let cmd = event.modifierFlags.contains(.command)
             switch event.keyCode {
             case 125: self.model.moveSelection(1); return nil                      // ↓
@@ -112,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case 36, 76: self.model.runSelected(actionIndex: cmd ? 1 : 0); return nil  // Return / Enter
             case 53: self.model.escape(); return nil                               // Esc
             case 40 where cmd: self.model.showActionPanel(); return nil            // ⌘K
+            case 43 where cmd: self.openSettings(); return nil                     // ⌘,
             case 45 where event.modifierFlags.contains(.control): self.model.moveSelection(1); return nil  // ⌃N
             case 35 where event.modifierFlags.contains(.control): self.model.moveSelection(-1); return nil // ⌃P
             default: return event
@@ -128,6 +140,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let open = NSMenuItem(title: "Open Lodestar (\(hotkeySpec))", action: #selector(togglePanel), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
+        openMenuItem = open
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         let reload = NSMenuItem(title: "Reload Scripts and Extensions", action: #selector(reloadExtensions), keyEquivalent: "")
         reload.target = self
         menu.addItem(reload)
@@ -141,6 +157,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(NSMenuItem(title: "Quit Lodestar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
+    }
+
+    @objc func openSettings() {
+        hidePanel()
+        let settings = self.settings ?? SettingsWindowController(model: SettingsModel(host: self))
+        self.settings = settings
+        settings.show()
     }
 
     @objc private func reloadExtensions() {
@@ -158,5 +181,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }
+    }
+}
+
+// MARK: Settings
+
+extension AppDelegate: SettingsHost {
+    var currentHotkey: HotkeySpec { hotKey?.spec ?? hotkeySpec }
+
+    func applyHotkey(_ spec: HotkeySpec) throws {
+        guard let hotKey else { return }
+        let previous = hotKey.spec
+        try hotKey.register(spec)
+        do {
+            // The default is stored as "no key", so the README's default applies.
+            config = try LodestarConfig.update(at: LodestarPaths.configFile) {
+                $0.hotkey = spec.isSameShortcut(as: .default) ? nil : spec.configString
+            }
+        } catch {
+            // Keep the live hotkey and the file in agreement.
+            if let previous { try? hotKey.register(previous) }
+            throw error
+        }
+        hotkeySpec = spec
+        openMenuItem?.title = "Open Lodestar (\(spec))"
+    }
+
+    func setHotkeySuspended(_ suspended: Bool) {
+        suspended ? hotKey?.suspend() : hotKey?.resume()
     }
 }

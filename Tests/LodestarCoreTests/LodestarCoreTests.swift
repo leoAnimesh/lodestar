@@ -88,6 +88,116 @@ final class HotkeySpecTests: XCTestCase {
         XCTAssertNil(HotkeySpec("hyper+k"))
         XCTAssertNotNil(HotkeySpec("f5"))
     }
+
+    func testDisplaySymbols() {
+        XCTAssertEqual(HotkeySpec.default.description, "⌥Space")
+        XCTAssertEqual(HotkeySpec("ctrl+option+shift+cmd+f5")?.description, "⌃⌥⇧⌘F5")
+        XCTAssertEqual(HotkeySpec("cmd+esc")?.description, "⌘⎋")
+        XCTAssertEqual(HotkeySpec("option+return")?.description, "⌥↩")
+        XCTAssertEqual(HotkeySpec("ctrl+left")?.description, "⌃←")
+        XCTAssertEqual(HotkeySpec("cmd+minus")?.description, "⌘-")
+        XCTAssertEqual(HotkeySpec.displayName(forKeyCode: 40), "K")
+    }
+
+    func testConfigStringRoundTrips() {
+        XCTAssertEqual(HotkeySpec.default.configString, "option+space")
+        XCTAssertEqual(HotkeySpec("cmd+shift+k")?.configString, "shift+cmd+k")
+        XCTAssertEqual(HotkeySpec("alt+esc")?.configString, "option+escape")
+        // Every key the recorder can produce must survive a save/load cycle.
+        for (code, _) in HotkeySpec.canonicalNames {
+            for mods in [HotkeySpec.command, HotkeySpec.option | HotkeySpec.shift, HotkeySpec.control | HotkeySpec.command] {
+                let spec = HotkeySpec(keyCode: code, carbonModifiers: mods)!
+                XCTAssertEqual(HotkeySpec(spec.configString), spec, spec.configString)
+            }
+        }
+    }
+
+    func testCocoaFlagConversionIgnoresOtherBits() {
+        let capsLock: UInt = 1 << 16, function: UInt = 1 << 23, deviceBits: UInt = 0x120
+        let flags = HotkeySpec.cocoaCommand | HotkeySpec.cocoaShift | capsLock | function | deviceBits
+        XCTAssertEqual(HotkeySpec.carbonModifiers(cocoaFlags: flags), HotkeySpec.command | HotkeySpec.shift)
+        XCTAssertEqual(HotkeySpec.carbonModifiers(cocoaFlags: HotkeySpec.cocoaOption | HotkeySpec.cocoaControl),
+                       HotkeySpec.option | HotkeySpec.control)
+    }
+
+    func testValidation() {
+        XCTAssertEqual(HotkeySpec.validate(keyCode: 49, carbonModifiers: HotkeySpec.option), .success(.default))
+        XCTAssertEqual(HotkeySpec.validate(keyCode: 40, carbonModifiers: 0), .failure(.needsModifier))
+        XCTAssertEqual(HotkeySpec.validate(keyCode: 40, carbonModifiers: HotkeySpec.shift), .failure(.needsModifier))
+        XCTAssertEqual(HotkeySpec.validate(keyCode: 96, carbonModifiers: 0), .failure(.needsModifier)) // bare F5
+        XCTAssertEqual(HotkeySpec.validate(keyCode: 200, carbonModifiers: HotkeySpec.command), .failure(.unsupportedKey(200)))
+        if case .success(let spec) = HotkeySpec.validate(keyCode: 40, carbonModifiers: HotkeySpec.shift | HotkeySpec.control) {
+            XCTAssertEqual(spec.configString, "ctrl+shift+k")
+        } else {
+            XCTFail("⌃⇧K should be valid")
+        }
+    }
+
+    func testRecorderOutcomes() {
+        XCTAssertEqual(HotkeyRecorder.interpret(keyCode: 53, cocoaFlags: 0), .cancel)
+        XCTAssertEqual(HotkeyRecorder.interpret(keyCode: 51, cocoaFlags: 0), .restoreDefault)
+        XCTAssertEqual(HotkeyRecorder.interpret(keyCode: 117, cocoaFlags: 1 << 23), .restoreDefault) // ⌦ carries Fn
+        XCTAssertEqual(HotkeyRecorder.interpret(keyCode: 49, cocoaFlags: HotkeySpec.cocoaOption), .record(.default))
+        XCTAssertEqual(HotkeyRecorder.interpret(keyCode: 40, cocoaFlags: HotkeySpec.cocoaShift), .invalid(.needsModifier))
+        XCTAssertEqual(HotkeyRecorder.interpret(keyCode: 0, cocoaFlags: 0), .invalid(.needsModifier))
+        // With a modifier, Esc and Delete are ordinary keys.
+        XCTAssertEqual(HotkeyRecorder.interpret(keyCode: 53, cocoaFlags: HotkeySpec.cocoaCommand), .record(HotkeySpec("cmd+escape")!))
+        XCTAssertEqual(HotkeyRecorder.interpret(keyCode: 51, cocoaFlags: HotkeySpec.cocoaOption), .record(HotkeySpec("option+delete")!))
+        XCTAssertEqual(HotkeyRecorder.modifierPreview(cocoaFlags: HotkeySpec.cocoaCommand | HotkeySpec.cocoaControl), "⌃⌘")
+    }
+}
+
+final class ConfigTests: XCTestCase {
+    func testUpdatePreservesUnknownAndUntouchedKeys() throws {
+        let existing = Data(#"{"hotkey":"cmd+space","clipboardHistoryLimit":50,"theme":"dark","nested":{"a":[1,2]}}"#.utf8)
+        let (data, config) = try LodestarConfig.updated(existing) { $0.hotkey = "ctrl+option+k" }
+        XCTAssertEqual(config.hotkey, "ctrl+option+k")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["hotkey"] as? String, "ctrl+option+k")
+        XCTAssertEqual(object["clipboardHistoryLimit"] as? Int, 50)
+        XCTAssertEqual(object["theme"] as? String, "dark")
+        XCTAssertNotNil(object["nested"])
+        // The written file is readable by the existing loader and parser.
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("lodestar-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try data.write(to: url)
+        let loaded = LodestarConfig.load(from: url)
+        XCTAssertEqual(loaded.hotkey.flatMap(HotkeySpec.init), HotkeySpec("ctrl+option+k"))
+        XCTAssertEqual(loaded.clipboardHistoryLimit, 50)
+    }
+
+    func testUpdateRemovesClearedKey() throws {
+        let existing = Data(#"{"hotkey":"cmd+space","clipboardHistoryEnabled":false}"#.utf8)
+        let (data, _) = try LodestarConfig.updated(existing) { $0.hotkey = nil }
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(object["hotkey"])
+        XCTAssertEqual(object["clipboardHistoryEnabled"] as? Bool, false)
+    }
+
+    func testUpdateCreatesFileFromNothingOrWhitespace() throws {
+        for existing in [nil, Data(), Data("  \n".utf8)] {
+            let (data, config) = try LodestarConfig.updated(existing) { $0.clipboardHistoryEnabled = true }
+            XCTAssertEqual(config, LodestarConfig(clipboardHistoryEnabled: true))
+            XCTAssertEqual(try JSONDecoder().decode(LodestarConfig.self, from: data), config)
+        }
+    }
+
+    func testUpdateRefusesToOverwriteInvalidFile() {
+        for bad in [#"{"hotkey": "#, #"[1,2]"#, #"{"clipboardHistoryLimit":"lots"}"#] {
+            XCTAssertThrowsError(try LodestarConfig.updated(Data(bad.utf8)) { $0.hotkey = "cmd+k" }) {
+                XCTAssertEqual($0 as? ConfigError, .invalidFile)
+            }
+        }
+    }
+
+    func testUpdateWritesAtomicallyToDisk() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lodestar-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("config.json")
+        try LodestarConfig.update(at: url) { $0.hotkey = HotkeySpec.default.configString }
+        try LodestarConfig.update(at: url) { $0.clipboardHistoryLimit = 100 }
+        XCTAssertEqual(LodestarConfig.load(from: url), LodestarConfig(hotkey: "option+space", clipboardHistoryLimit: 100))
+    }
 }
 
 final class ScriptCommandTests: XCTestCase {
