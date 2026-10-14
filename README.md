@@ -72,7 +72,7 @@ Everything runs locally. No accounts, no analytics, no network calls of its own.
 | ⌘1 … ⌘5 | Switch Settings tabs (in the Settings window) |
 | Esc | Close the detail view, go back, clear the query, then hide |
 
-## Build & run
+## Install (build from source)
 
 Lodestar has no releases yet, so you build it from source. It requires macOS 13+ and a Swift 5.9+ toolchain (Xcode or the Command Line Tools).
 
@@ -306,7 +306,7 @@ Sources/
 
 Everything the user can navigate into is a `ListScreen`: root search, clipboard history, the emoji grid (a screen with `presentation = .grid`), file search, a script argument prompt, an extension session, or the ⌘K action list. The view model keeps a stack of screens. Asynchronous sources such as Spotlight and extensions push results through `ScreenHost.setItems`.
 
-### Inspired by Raycast, built independently
+## Inspired by Raycast, built independently
 
 Lodestar is inspired by the Raycast experience but is an independent, clean-room project. It uses native
 SwiftUI and AppKit, a Carbon global hotkey, Spotlight for file search and a language-agnostic stdio
@@ -319,6 +319,10 @@ protocol for extensions, with no bundled runtime. It is not affiliated with Rayc
 - Image clipboard entries; pinned entries
 - Richer extension UI: forms, grids, markdown rendering, preferences
 - Unit conversions and currency in the calculator
+
+## Contributing
+
+Issues and pull requests are welcome. Run `swift test` before opening a PR.
 
 ## License
 
