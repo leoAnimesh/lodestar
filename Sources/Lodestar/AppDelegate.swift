@@ -50,7 +50,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         installStatusItem()
         registerHotKey()
 
-        if CommandLine.arguments.contains("--show") { showPanel() }
+        // An accessory app shows nothing at launch, which looks like "nothing opened".
+        // Show the launcher the first time it runs (and with --show).
+        let firstRun = !UserDefaults.standard.bool(forKey: "didShowFirstLaunch")
+        if firstRun || CommandLine.arguments.contains("--show") {
+            UserDefaults.standard.set(true, forKey: "didShowFirstLaunch")
+            showPanel()
+        }
+        NSLog("Lodestar: running; press \(hotkeySpec) or use the menu bar icon to open the launcher")
+    }
+
+    /// Opening the app again (`open Lodestar.app`, Finder, Spotlight) while it is
+    /// already running shows the launcher instead of silently doing nothing.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showPanel()
+        return false
     }
 
     private func ensureConfigDirectories() {
