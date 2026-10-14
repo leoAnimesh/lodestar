@@ -16,8 +16,6 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
     public var launcherPosition: String?
     /// Set false to hide the menu-bar icon.
     public var showMenuBarIcon: Bool?
-    /// Points of space around snapped windows (0-32).
-    public var windowGap: Int?
     /// Per-command enable/alias/hotkey settings, keyed by command ID.
     public var commands: [String: CommandSettings]?
     /// Default skin tone for emoji: "light", "mediumLight", "medium",
@@ -25,7 +23,7 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
     public var emojiSkinTone: String?
 
     public init(hotkey: String? = nil, appDirectories: [String]? = nil, clipboardHistoryLimit: Int? = nil, clipboardHistoryEnabled: Bool? = nil,
-                appearance: String? = nil, launcherPosition: String? = nil, showMenuBarIcon: Bool? = nil, windowGap: Int? = nil,
+                appearance: String? = nil, launcherPosition: String? = nil, showMenuBarIcon: Bool? = nil,
                 commands: [String: CommandSettings]? = nil, emojiSkinTone: String? = nil) {
         self.hotkey = hotkey
         self.appDirectories = appDirectories
@@ -34,7 +32,6 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
         self.appearance = appearance
         self.launcherPosition = launcherPosition
         self.showMenuBarIcon = showMenuBarIcon
-        self.windowGap = windowGap
         self.commands = commands
         self.emojiSkinTone = emojiSkinTone
     }
@@ -54,7 +51,10 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
 
     /// Keys this type owns in config.json. Any other keys are left untouched on save.
     static let knownKeys = ["hotkey", "appDirectories", "clipboardHistoryLimit", "clipboardHistoryEnabled",
-                            "appearance", "launcherPosition", "showMenuBarIcon", "windowGap", "commands", "emojiSkinTone"]
+                            "appearance", "launcherPosition", "showMenuBarIcon", "commands", "emojiSkinTone"]
+    /// Keys of removed features ("windowGap", from window management). They
+    /// are ignored when reading and dropped the next time the file is saved.
+    static let retiredKeys = ["windowGap"]
 
     /// Reads the config at `url`, applies `change`, and writes it back atomically.
     /// Unknown keys are preserved. If the file exists but can't be parsed, nothing
@@ -82,7 +82,7 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
             config = decoded
         }
         change(&config)
-        for key in knownKeys { object[key] = nil }
+        for key in knownKeys + retiredKeys { object[key] = nil }
         let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as? [String: Any] ?? [:]
         object.merge(encoded) { _, new in new }
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])

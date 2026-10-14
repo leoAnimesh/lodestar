@@ -15,7 +15,6 @@ struct SettingsView: View {
                 case .general: GeneralSettingsPage(model: model)
                 case .extensions: ExtensionsSettingsPage(model: model)
                 case .clipboard: ClipboardSettingsPage(model: model)
-                case .windows: WindowSettingsPage(model: model)
                 case .advanced: AdvancedSettingsPage(model: model, permissions: model.permissions)
                 case .about: AboutSettingsPage(model: model)
                 }
@@ -283,99 +282,6 @@ struct PageHeader: View {
     }
 }
 
-// MARK: - Window management
-
-struct WindowSettingsPage: View {
-    @ObservedObject var model: SettingsModel
-    @ObservedObject var capture: ShortcutCapture
-    @ObservedObject var permissions: PermissionsMonitor
-
-    init(model: SettingsModel) {
-        self.model = model
-        self.capture = model.capture
-        self.permissions = model.permissions
-    }
-
-    private var layouts: [RootScreen.CatalogEntry] { model.catalog.filter { $0.descriptor.kind == .window } }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 24) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Window Management").font(.system(size: 17, weight: .semibold))
-                    Text("Snap the frontmost window into place from the launcher or with a shortcut.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text("Gap").foregroundStyle(.secondary)
-                        Slider(value: Binding(get: { Double(model.windowGap) },
-                                              set: { model.setWindowGap(Int($0.rounded())) }),
-                               in: Double(WindowGap.range.lowerBound)...Double(WindowGap.range.upperBound), step: 2)
-                            .frame(width: 140)
-                        Text("\(model.windowGap) pt").monospacedDigit().frame(width: 40, alignment: .trailing)
-                    }
-                    Text("Space around snapped windows").font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-            }
-
-            Card(padding: 12) {
-                PermissionRow(symbol: "hand.raised.fill", tint: .blue, title: "Accessibility",
-                              detail: "Required to move and resize other apps' windows.",
-                              status: permissions.accessibility, buttonTitle: "Grant Access…") {
-                    permissions.requestAccessibility()
-                }
-            }
-
-            VStack(spacing: 0) {
-                HStack {
-                    Text("Layout").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Hotkey").frame(width: 130, alignment: .leading)
-                    Text("Enabled").frame(width: 56)
-                }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                Divider()
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(layouts.enumerated()), id: \.element.descriptor.id) { index, entry in
-                            let id = entry.descriptor.id
-                            HStack(spacing: 10) {
-                                ItemIconView(icon: entry.icon).frame(width: 22, height: 22).scaleEffect(0.85)
-                                Text(entry.descriptor.title).frame(maxWidth: .infinity, alignment: .leading)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    ShortcutField(capture: capture, target: id, spec: model.preferences.hotkey(for: id),
-                                                  placeholder: "Record", compact: true) {
-                                        model.toggleCommandRecording(id)
-                                    }
-                                    if let error = capture.errorMessage(for: id) {
-                                        Text(error).font(.system(size: 10)).foregroundStyle(.red).lineLimit(2)
-                                    }
-                                }
-                                .frame(width: 130, alignment: .leading)
-                                Toggle("", isOn: Binding(get: { model.isEnabled(id) }, set: { model.setEnabled($0, for: id) }))
-                                    .toggleStyle(.switch).controlSize(.mini).labelsHidden()
-                                    .frame(width: 56)
-                            }
-                            .padding(.horizontal, 12)
-                            .frame(minHeight: 34)
-                            .background(index.isMultiple(of: 2) ? Color.primary.opacity(0.025) : Color.clear)
-                        }
-                    }
-                }
-            }
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.02)))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 20)
-    }
-}
-
 // MARK: - Advanced
 
 struct AdvancedSettingsPage: View {
@@ -390,7 +296,7 @@ struct AdvancedSettingsPage: View {
                 sectionTitle("Permissions")
                 Card(padding: 12) {
                     PermissionRow(symbol: "hand.raised.fill", tint: .blue, title: "Accessibility",
-                                  detail: "Window management, pasting from clipboard history and Lock Screen.",
+                                  detail: "Pasting from clipboard history and emoji into other apps, and Lock Screen.",
                                   status: permissions.accessibility, buttonTitle: "Grant Access…") {
                         permissions.requestAccessibility()
                     }
@@ -522,7 +428,7 @@ struct AboutSettingsPage: View {
                 Text("Lodestar").font(.system(size: 26, weight: .bold, design: .rounded))
                 Text(AboutSettingsPage.version).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
             }
-            Text("A fast, open-source launcher for your Mac.\nFind apps, run commands and move windows without leaving the keyboard.")
+            Text("A fast, open-source launcher for your Mac.\nFind apps, run commands and paste emoji without leaving the keyboard.")
                 .multilineTextAlignment(.center)
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)

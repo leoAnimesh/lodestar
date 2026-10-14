@@ -50,36 +50,36 @@ final class CommandPreferencesTests: XCTestCase {
 
     func testAliasPromotion() throws {
         var prefs = CommandPreferences()
-        try prefs.setAlias("wl", for: "wm:Left Half")
-        let available: Set = ["wm:Left Half", "app:/A", "app:/B"]
-        XCTAssertEqual(prefs.promotingAlias(of: "wl", in: ["app:/A", "wm:Left Half"], available: available),
-                       ["wm:Left Half", "app:/A"])
+        try prefs.setAlias("wl", for: "sys:lock")
+        let available: Set = ["sys:lock", "app:/A", "app:/B"]
+        XCTAssertEqual(prefs.promotingAlias(of: "wl", in: ["app:/A", "sys:lock"], available: available),
+                       ["sys:lock", "app:/A"])
         // Inserted even when fuzzy ranking didn't find it.
-        XCTAssertEqual(prefs.promotingAlias(of: "WL", in: ["app:/B"], available: available), ["wm:Left Half", "app:/B"])
+        XCTAssertEqual(prefs.promotingAlias(of: "WL", in: ["app:/B"], available: available), ["sys:lock", "app:/B"])
         // Disabled commands don't answer to their alias.
-        prefs.setEnabled(false, for: "wm:Left Half")
+        prefs.setEnabled(false, for: "sys:lock")
         XCTAssertEqual(prefs.promotingAlias(of: "wl", in: ["app:/B"], available: available), ["app:/B"])
-        XCTAssertEqual(prefs.alias(for: "wm:Left Half"), "wl", "disabling keeps the alias")
+        XCTAssertEqual(prefs.alias(for: "sys:lock"), "wl", "disabling keeps the alias")
     }
 
     func testHotkeysAndConflicts() throws {
         var prefs = CommandPreferences()
         let left = HotkeySpec("ctrl+option+left")!
-        try prefs.setHotkey(left, for: "wm:Left Half", launcherHotkey: .default)
-        XCTAssertEqual(prefs.hotkey(for: "wm:Left Half"), left)
-        XCTAssertEqual(prefs.settings(for: "wm:Left Half").hotkey, "ctrl+option+left")
-        XCTAssertThrowsError(try prefs.setHotkey(HotkeySpec("option+ctrl+left"), for: "wm:Right Half", launcherHotkey: .default)) {
-            XCTAssertEqual($0 as? CommandHotkeyError, .inUse(byCommandID: "wm:Left Half"))
+        try prefs.setHotkey(left, for: "sys:lock", launcherHotkey: .default)
+        XCTAssertEqual(prefs.hotkey(for: "sys:lock"), left)
+        XCTAssertEqual(prefs.settings(for: "sys:lock").hotkey, "ctrl+option+left")
+        XCTAssertThrowsError(try prefs.setHotkey(HotkeySpec("option+ctrl+left"), for: "sys:displaysleep", launcherHotkey: .default)) {
+            XCTAssertEqual($0 as? CommandHotkeyError, .inUse(byCommandID: "sys:lock"))
         }
-        XCTAssertThrowsError(try prefs.setHotkey(.default, for: "wm:Right Half", launcherHotkey: .default)) {
+        XCTAssertThrowsError(try prefs.setHotkey(.default, for: "sys:displaysleep", launcherHotkey: .default)) {
             XCTAssertEqual($0 as? CommandHotkeyError, .sameAsLauncher)
         }
-        try prefs.setHotkey(HotkeySpec("ctrl+option+right"), for: "wm:Right Half", launcherHotkey: .default)
-        XCTAssertEqual(prefs.hotkeyBindings.map(\.id), ["wm:Left Half", "wm:Right Half"])
-        prefs.setEnabled(false, for: "wm:Right Half")
-        XCTAssertEqual(prefs.hotkeyBindings.map(\.id), ["wm:Left Half"], "disabled commands get no shortcut")
-        try prefs.setHotkey(nil, for: "wm:Left Half", launcherHotkey: .default)
-        XCTAssertNil(prefs.hotkey(for: "wm:Left Half"))
+        try prefs.setHotkey(HotkeySpec("ctrl+option+right"), for: "sys:displaysleep", launcherHotkey: .default)
+        XCTAssertEqual(prefs.hotkeyBindings.map(\.id), ["sys:displaysleep", "sys:lock"])
+        prefs.setEnabled(false, for: "sys:displaysleep")
+        XCTAssertEqual(prefs.hotkeyBindings.map(\.id), ["sys:lock"], "disabled commands get no shortcut")
+        try prefs.setHotkey(nil, for: "sys:lock", launcherHotkey: .default)
+        XCTAssertNil(prefs.hotkey(for: "sys:lock"))
     }
 
     func testPrune() throws {
@@ -90,11 +90,28 @@ final class CommandPreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.entries.keys.sorted(), ["cmd:files"])
     }
 
+    func testRetiredWindowLayoutSettingsAreIgnored() throws {
+        // Window management was removed; its saved settings must not crash
+        // loading or keep a global shortcut registered.
+        let file = Data(#"{"windowGap":8,"commands":{"wm:Left Half":{"hotkey":"ctrl+option+left","alias":"lh"},"cmd:files":{"enabled":false}},"custom":1}"#.utf8)
+        let config = try JSONDecoder().decode(LodestarConfig.self, from: file)
+        let prefs = config.commandPreferences
+        XCTAssertEqual(prefs.entries.keys.sorted(), ["cmd:files"])
+        XCTAssertTrue(prefs.hotkeyBindings.isEmpty)
+        XCTAssertNil(prefs.commandID(forAlias: "lh"))
+        // The next save drops the stale keys and keeps unknown ones.
+        let (data, _) = try LodestarConfig.updated(file) { $0.commandPreferences = $0.commandPreferences }
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(object["windowGap"])
+        XCTAssertEqual((object["commands"] as? [String: Any])?.keys.sorted(), ["cmd:files"])
+        XCTAssertEqual(object["custom"] as? Int, 1)
+    }
+
     func testRoundTripsThroughConfigFile() throws {
         var prefs = CommandPreferences()
         prefs.setEnabled(false, for: "sys:sleep")
         try prefs.setAlias("cb", for: "cmd:clipboard")
-        try prefs.setHotkey(HotkeySpec("ctrl+option+return"), for: "wm:Maximize", launcherHotkey: .default)
+        try prefs.setHotkey(HotkeySpec("ctrl+option+return"), for: "cmd:emoji", launcherHotkey: .default)
         let existing = Data(#"{"hotkey":"cmd+shift+space","custom":1}"#.utf8)
         let (data, config) = try LodestarConfig.updated(existing) { $0.commandPreferences = prefs }
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -102,7 +119,7 @@ final class CommandPreferencesTests: XCTestCase {
         let commands = try XCTUnwrap(object["commands"] as? [String: [String: Any]])
         XCTAssertEqual(commands["sys:sleep"]?["enabled"] as? Bool, false)
         XCTAssertEqual(commands["cmd:clipboard"]?["alias"] as? String, "cb")
-        XCTAssertEqual(commands["wm:Maximize"]?["hotkey"] as? String, "ctrl+option+return")
+        XCTAssertEqual(commands["cmd:emoji"]?["hotkey"] as? String, "ctrl+option+return")
         let decoded = try JSONDecoder().decode(LodestarConfig.self, from: data)
         XCTAssertEqual(decoded.commandPreferences, prefs)
         XCTAssertEqual(config.commandPreferences, prefs)
@@ -117,15 +134,15 @@ final class CommandPreferencesTests: XCTestCase {
         let all = [
             CommandDescriptor(id: "cmd:clipboard", title: "Clipboard History", kind: .command, group: "Lodestar", keywords: ["paste"]),
             CommandDescriptor(id: "cmd:files", title: "Search Files", kind: .command, group: "Lodestar"),
-            CommandDescriptor(id: "wm:Left Half", title: "Left Half", kind: .window, group: "Window Management"),
-            CommandDescriptor(id: "wm:Maximize", title: "Maximize", kind: .window, group: "Window Management"),
+            CommandDescriptor(id: "sys:lock", title: "Lock Screen", kind: .system, group: "System"),
+            CommandDescriptor(id: "sys:sleep", title: "Sleep", kind: .system, group: "System"),
             CommandDescriptor(id: "script:/ip.sh", title: "Show IP Address", kind: .script, group: "Script Commands"),
         ]
-        XCTAssertEqual(CommandCatalog.sections(all, query: "").map(\.title), ["Lodestar", "Window Management", "Script Commands"])
-        XCTAssertEqual(CommandCatalog.sections(all, query: "", kind: .window).flatMap(\.commands).map(\.id), ["wm:Left Half", "wm:Maximize"])
+        XCTAssertEqual(CommandCatalog.sections(all, query: "").map(\.title), ["Lodestar", "System", "Script Commands"])
+        XCTAssertEqual(CommandCatalog.sections(all, query: "", kind: .system).flatMap(\.commands).map(\.id), ["sys:lock", "sys:sleep"])
         XCTAssertEqual(CommandCatalog.sections(all, query: "paste").flatMap(\.commands).map(\.id), ["cmd:clipboard"])
-        // Group names match too, so "window" lists the whole section.
-        XCTAssertEqual(CommandCatalog.sections(all, query: "window management").flatMap(\.commands).count, 2)
+        // Group names match too, so "system" lists the whole section.
+        XCTAssertEqual(CommandCatalog.sections(all, query: "system").flatMap(\.commands).count, 2)
         var prefs = CommandPreferences()
         try prefs.setAlias("zz", for: "cmd:files")
         XCTAssertEqual(CommandCatalog.sections(all, query: "zz", preferences: prefs).flatMap(\.commands).map(\.id), ["cmd:files"])
@@ -155,20 +172,6 @@ final class AppPreferencesTests: XCTestCase {
         let short = CGRect(x: 0, y: 0, width: 800, height: 460)
         let origin = LauncherPosition.upperThird.origin(panelSize: size, visibleFrame: short)
         XCTAssertEqual(origin.y, 20)
-    }
-
-    func testWindowGap() {
-        let visible = CGRect(x: 0, y: 0, width: 1000, height: 800)
-        XCTAssertEqual(WindowGap.apply(0, to: CGRect(x: 0, y: 0, width: 500, height: 800), in: visible),
-                       CGRect(x: 0, y: 0, width: 500, height: 800))
-        // Left half: full gap at screen edges, half at the shared middle edge.
-        XCTAssertEqual(WindowGap.apply(10, to: CGRect(x: 0, y: 0, width: 500, height: 800), in: visible),
-                       CGRect(x: 10, y: 10, width: 485, height: 780))
-        XCTAssertEqual(WindowGap.apply(10, to: CGRect(x: 500, y: 0, width: 500, height: 800), in: visible),
-                       CGRect(x: 505, y: 10, width: 485, height: 780))
-        XCTAssertEqual(WindowGap.clamp(100), 32)
-        XCTAssertEqual(WindowGap.clamp(-3), 0)
-        XCTAssertEqual(WindowGap.clamp(nil), 0)
     }
 
     func testSystemHotkeyConflicts() {

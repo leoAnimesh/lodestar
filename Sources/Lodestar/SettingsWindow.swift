@@ -24,7 +24,7 @@ protocol SettingsHost: AnyObject {
 }
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, extensions, clipboard, windows, advanced, about
+    case general, extensions, clipboard, advanced, about
     var id: String { rawValue }
 
     var title: String {
@@ -32,7 +32,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return "General"
         case .extensions: return "Extensions"
         case .clipboard: return "Clipboard"
-        case .windows: return "Windows"
         case .advanced: return "Advanced"
         case .about: return "About"
         }
@@ -43,7 +42,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .extensions: return "puzzlepiece.extension"
         case .clipboard: return "doc.on.clipboard"
-        case .windows: return "macwindow.on.rectangle"
         case .advanced: return "slider.horizontal.3"
         case .about: return "info.circle"
         }
@@ -101,7 +99,6 @@ final class SettingsModel: ObservableObject {
     var appearance: AppearanceMode { AppearanceMode(configValue: config.appearance) }
     var launcherPosition: LauncherPosition { LauncherPosition(configValue: config.launcherPosition) }
     var showMenuBarIcon: Bool { config.showMenuBarIcon ?? true }
-    var windowGap: Int { WindowGap.clamp(config.windowGap) }
     var emojiSkinTone: EmojiSkinTone { EmojiSkinTone(configValue: config.emojiSkinTone) }
     var hotkeyError: String? { capture.errorMessage(for: SettingsModel.launcherTarget) }
     var hotkeyWarning: String? { HotkeyConflicts.systemConflict(for: hotkey) }
@@ -163,7 +160,6 @@ final class SettingsModel: ObservableObject {
     func setLauncherPosition(_ position: LauncherPosition) { save { $0.launcherPosition = position.configValue } }
     func setShowMenuBarIcon(_ show: Bool) { save { $0.showMenuBarIcon = show ? nil : false } }
     func setEmojiSkinTone(_ tone: EmojiSkinTone) { save { $0.emojiSkinTone = tone.configValue } }
-    func setWindowGap(_ gap: Int) { save { $0.windowGap = gap == 0 ? nil : WindowGap.clamp(gap) } }
 
     func clearClipboardHistory() {
         host?.clearClipboardHistory()

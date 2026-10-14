@@ -4,7 +4,7 @@ import LodestarCore
 
 /// A borderless, floating, non-activating panel. Non-activating means the
 /// user's current app stays frontmost while we take keyboard focus, so
-/// "paste" and "window management" actions target the right app.
+/// "paste" actions target the right app.
 ///
 /// It is deliberately *not* `.titled`: a titled window (even with a hidden,
 /// transparent title bar) makes SwiftUI reserve a ~28pt title-bar safe area,

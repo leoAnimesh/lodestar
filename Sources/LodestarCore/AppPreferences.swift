@@ -51,29 +51,6 @@ public enum LauncherPosition: String, CaseIterable, Sendable {
     }
 }
 
-/// Spacing between snapped windows and the screen edge (`"windowGap"`, points).
-public enum WindowGap {
-    public static let range = 0...32
-
-    public static func clamp(_ value: Int?) -> Int { min(max(value ?? 0, range.lowerBound), range.upperBound) }
-
-    /// Insets `frame` (inside `visible`) so edges on the screen border get the
-    /// full gap and edges shared with a neighbouring tile get half, which
-    /// makes the space between two tiled windows equal to the outer margin.
-    public static func apply(_ gap: Int, to frame: CGRect, in visible: CGRect) -> CGRect {
-        let g = CGFloat(clamp(gap))
-        guard g > 0 else { return frame }
-        let eps: CGFloat = 0.5
-        func inset(_ edge: CGFloat, _ border: CGFloat) -> CGFloat { abs(edge - border) < eps ? g : g / 2 }
-        let left = inset(frame.minX, visible.minX)
-        let right = inset(frame.maxX, visible.maxX)
-        let bottom = inset(frame.minY, visible.minY)
-        let top = inset(frame.maxY, visible.maxY)
-        return CGRect(x: frame.minX + left, y: frame.minY + bottom,
-                      width: max(frame.width - left - right, 1), height: max(frame.height - bottom - top, 1))
-    }
-}
-
 /// Well-known system shortcuts that usually win over a Carbon hotkey, so
 /// registering them "succeeds" but the launcher never opens.
 public enum HotkeyConflicts {

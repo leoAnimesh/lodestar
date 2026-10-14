@@ -117,7 +117,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }()
         launcherPosition = LauncherPosition(configValue: newConfig.launcherPosition)
-        WindowManager.gap = WindowGap.clamp(newConfig.windowGap)
 
         let recordClipboard = newConfig.clipboardHistoryEnabled ?? true
         clipboard.limit = max(newConfig.clipboardHistoryLimit ?? 300, 1)
@@ -191,7 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// Runs a command from its own shortcut. Commands that just do something
-    /// (window layouts, system commands) run without showing the launcher;
+    /// (system commands) run without showing the launcher;
     /// commands with UI (clipboard history, extensions) open it.
     func runCommand(_ id: String) {
         guard let item = root.allItems().first(where: { $0.id == id }), let action = item.actions.first else { return }
@@ -280,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             let cmd = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
-            // ⌘W and ⌘1…⌘6 in our ordinary windows (an accessory app has no main menu).
+            // ⌘W and ⌘1…⌘5 in our ordinary windows (an accessory app has no main menu).
             if cmd, !self.settingsModel.capture.isRecording {
                 if event.keyCode == 13, let window = event.window,
                    window === self.settings?.window || window === self.onboarding?.window {

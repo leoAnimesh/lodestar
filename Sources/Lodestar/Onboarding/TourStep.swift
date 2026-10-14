@@ -3,11 +3,11 @@ import SwiftUI
 import LodestarCore
 
 /// An interactive tour: pick a feature on the left, then type into a working
-/// miniature launcher on the right. Search, clipboard and window filtering
+/// miniature launcher on the right. Search and clipboard filtering
 /// use the real fuzzy matcher, and the calculator is the real evaluator.
 struct TourStep: View {
     enum Feature: Int, CaseIterable, Identifiable {
-        case search, actions, clipboard, windows, calculator
+        case search, actions, clipboard, calculator
         var id: Int { rawValue }
 
         var title: String {
@@ -15,7 +15,6 @@ struct TourStep: View {
             case .search: return "Search"
             case .actions: return "Actions"
             case .clipboard: return "Clipboard History"
-            case .windows: return "Window Management"
             case .calculator: return "Calculator"
             }
         }
@@ -25,7 +24,6 @@ struct TourStep: View {
             case .search: return "magnifyingglass"
             case .actions: return "command"
             case .clipboard: return "doc.on.clipboard"
-            case .windows: return "rectangle.split.2x1"
             case .calculator: return "equal.square"
             }
         }
@@ -35,7 +33,6 @@ struct TourStep: View {
             case .search: return .blue
             case .actions: return .pink
             case .clipboard: return .orange
-            case .windows: return .teal
             case .calculator: return .green
             }
         }
@@ -45,7 +42,6 @@ struct TourStep: View {
             case .search: return "Type a few letters of any app or command. Initials work too: “ss” finds System Settings."
             case .actions: return "Every result has more than one action. Press ⌘K to see them all, or ⌘↩ for the second one."
             case .clipboard: return "Open “Clipboard History” to search what you copied earlier, then press ↩ to paste it."
-            case .windows: return "Search for a layout like “left half” to snap the frontmost window. Give favorites a hotkey in Settings."
             case .calculator: return "Type math straight into the search bar. ↩ copies the answer, ⌘↩ pastes it."
             }
         }
@@ -55,7 +51,6 @@ struct TourStep: View {
             case .search: return "cal"
             case .actions: return "saf"
             case .clipboard: return ""
-            case .windows: return "half"
             case .calculator: return "1280 / 16 * 9"
             }
         }
@@ -65,7 +60,6 @@ struct TourStep: View {
             case .search: return [("Open", "↩"), ("Move", "↑↓")]
             case .actions: return [("Actions", "⌘K"), ("Second action", "⌘↩")]
             case .clipboard: return [("Paste", "↩"), ("Copy", "⌘↩")]
-            case .windows: return [("Snap", "↩")]
             case .calculator: return [("Copy", "↩"), ("Paste", "⌘↩")]
             }
         }
@@ -205,17 +199,7 @@ struct TourStep: View {
         )
     }
 
-    @ViewBuilder
-    private var results: some View {
-        if feature == .windows, rows.indices.contains(selected), let layout = WindowManager.Layout(rawValue: rows[selected].title) {
-            HStack(spacing: 0) {
-                list
-                LayoutPreview(layout: layout).frame(width: 150).padding(.trailing, 12)
-            }
-        } else {
-            list
-        }
-    }
+    private var results: some View { list }
 
     private var list: some View {
         ScrollView {
@@ -286,9 +270,6 @@ struct TourStep: View {
         case .clipboard:
             let entries = TourStep.sampleClipboard.map { ($0.0, ItemIcon.symbol("doc.text"), $0.1) }  // entries, not commands: plain
             return fuzzy(entries, q, limitWhenEmpty: 8, keepOrder: true)
-        case .windows:
-            let layouts = WindowManager.Layout.allCases.map { ($0.rawValue, ItemIcon.tinted($0.symbol, IconTint.forItem("wm:\($0.rawValue)")), "Window") }
-            return fuzzy(layouts, q, limitWhenEmpty: 8)
         case .calculator:
             guard let value = Calculator.evaluateIfCalculation(q) else { return [] }
             return [LauncherItem(id: "calc", title: Calculator.format(value), subtitle: "= \(q)", icon: .tinted("equal", IconTint.forItem("calc")),
@@ -331,29 +312,4 @@ struct TourStep: View {
         ("SELECT name, email FROM users WHERE active = 1;", "3h ago"),
         ("Thanks! I'll send the draft over tonight.", "Yesterday"),
     ]
-}
-
-/// A small screen with the chosen layout highlighted.
-private struct LayoutPreview: View {
-    let layout: WindowManager.Layout
-
-    var body: some View {
-        GeometryReader { geo in
-            let screen = CGRect(origin: .zero, size: geo.size)
-            let current = CGRect(x: geo.size.width * 0.3, y: geo.size.height * 0.3, width: geo.size.width * 0.45, height: geo.size.height * 0.45)
-            let target = layout.frame(in: screen, current: current)
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.06))
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.teal.opacity(0.75))
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.white.opacity(0.4)))
-                    // Cocoa frames are bottom-up; flip for SwiftUI.
-                    .frame(width: max(target.width - 4, 4), height: max(target.height - 4, 4))
-                    .offset(x: target.minX + 2, y: geo.size.height - target.maxY + 2)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: layout)
-            }
-        }
-        .frame(height: 96)
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.15)))
-    }
 }

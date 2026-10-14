@@ -39,7 +39,7 @@ final class RootScreen: ListScreen {
             // No query: show most-used items, then a few useful defaults.
             let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             var result = frecency.mostUsed(limit: 8).compactMap { byID[$0] }
-            for id in ["cmd:clipboard", "cmd:emoji", "cmd:files", "wm:Left Half", "wm:Right Half", "wm:Maximize"] where !result.contains(where: { $0.id == id }) {
+            for id in ["cmd:clipboard", "cmd:emoji", "cmd:files"] where !result.contains(where: { $0.id == id }) {
                 if let item = byID[id] { result.append(item) }
             }
             return result.map(RootScreen.withTile)
@@ -146,7 +146,7 @@ final class RootScreen: ListScreen {
 
     /// Every command, enabled or not (apps excluded).
     func commandItems() -> [LauncherItem] {
-        builtinCommands() + windowCommands() + systemCommands() + scriptItems() + extensionItems()
+        builtinCommands() + systemCommands() + scriptItems() + extensionItems()
     }
 
     /// One row per command for Settings › Extensions.
@@ -164,12 +164,6 @@ final class RootScreen: ListScreen {
             entries.append(CatalogEntry(
                 descriptor: CommandDescriptor(id: item.id, title: item.title, subtitle: item.subtitle, kind: .command, group: "Lodestar", keywords: item.keywords),
                 icon: item.icon.tinted(for: item.id), location: nil, summary: RootScreen.builtinSummaries[item.id] ?? "A built-in Lodestar command."))
-        }
-        for item in windowCommands() {
-            entries.append(CatalogEntry(
-                descriptor: CommandDescriptor(id: item.id, title: item.title, subtitle: "Window Management", kind: .window, group: "Window Management", keywords: item.keywords),
-                icon: item.icon.tinted(for: item.id), location: nil,
-                summary: "Moves and resizes the focused window of the frontmost app. Needs Accessibility access."))
         }
         for item in systemCommands() {
             entries.append(CatalogEntry(
@@ -299,21 +293,6 @@ final class RootScreen: ListScreen {
             NSApp.terminate(nil); return .close
         })
         return items
-    }
-
-    private func windowCommands() -> [LauncherItem] {
-        WindowManager.Layout.allCases.map { layout in
-            command("wm:\(layout.rawValue)", layout.rawValue, subtitle: "Window Management", symbol: layout.symbol,
-                    keywords: ["window", "resize", "snap"], accessory: "Window") { [weak self] in
-                .closeThen {
-                    if case .failure(let error) = WindowManager.apply(layout) {
-                        NSLog("Lodestar window management: \(error)")
-                        if case .notTrusted = error { return }
-                        self?.host?.showToast(error.description)
-                    }
-                }
-            }
-        }
     }
 
     private func systemCommands() -> [LauncherItem] {

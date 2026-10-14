@@ -135,7 +135,7 @@ private struct WelcomeStep: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.secondary)
             }
-            Text("Open apps, run commands, search your clipboard and arrange windows without reaching for the mouse. Setup takes about a minute.")
+            Text("Open apps, run commands, search your clipboard and paste emoji without reaching for the mouse. Setup takes about a minute.")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -213,7 +213,7 @@ private struct PermissionsStep: View {
                        subtitle: "Some features need your OK in System Settings. Statuses update here as soon as you change them.")
             Card(padding: 14) {
                 PermissionRow(symbol: "hand.raised.fill", tint: .blue, title: "Accessibility",
-                              detail: "Move and resize windows, and paste from clipboard history into other apps.",
+                              detail: "Paste from clipboard history and emoji into other apps, and Lock Screen.",
                               status: permissions.accessibility, buttonTitle: "Grant Access…") {
                     permissions.requestAccessibility()
                 }

@@ -55,8 +55,15 @@ public struct CommandPreferences: Equatable, Sendable {
 
     public static let maxAliasLength = 24
 
+    /// ID prefixes of commands that no longer exist ("wm:" window layouts).
+    /// Their saved settings are ignored, so an old shortcut isn't registered
+    /// for nothing, and are dropped the next time preferences are saved.
+    public static let retiredIDPrefixes = ["wm:"]
+
     public init(_ entries: [String: CommandSettings]? = nil) {
-        self.entries = (entries ?? [:]).filter { !$0.value.isDefault }
+        self.entries = (entries ?? [:]).filter { id, settings in
+            !settings.isDefault && !CommandPreferences.retiredIDPrefixes.contains { id.hasPrefix($0) }
+        }
     }
 
     /// The value to store in `LodestarConfig.commands` (nil when empty).
@@ -160,12 +167,11 @@ public struct CommandPreferences: Equatable, Sendable {
 // MARK: - Command catalog (the Settings › Extensions list)
 
 public enum CommandKind: String, CaseIterable, Sendable {
-    case command, window, system, script, `extension`
+    case command, system, script, `extension`
 
     public var displayName: String {
         switch self {
         case .command: return "Command"
-        case .window: return "Window"
         case .system: return "System"
         case .script: return "Script"
         case .extension: return "Extension"
@@ -179,7 +185,7 @@ public struct CommandDescriptor: Equatable, Sendable, Identifiable {
     public var title: String
     public var subtitle: String?
     public var kind: CommandKind
-    /// Section in the list, e.g. "Lodestar", "Window Management" or an extension's title.
+    /// Section in the list, e.g. "Lodestar", "System" or an extension's title.
     public var group: String
     public var keywords: [String]
 

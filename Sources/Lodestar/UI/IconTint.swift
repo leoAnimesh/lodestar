@@ -29,10 +29,9 @@ enum IconTint: String, CaseIterable {
         return Color(ns.blended(withFraction: 0.28, of: .white) ?? ns)
     }
 
-    /// The color for a launcher item ID such as "cmd:clipboard" or "wm:Left Half".
+    /// The color for a launcher item ID such as "cmd:clipboard" or "sys:lock".
     static func forItem(_ id: String) -> IconTint {
         if let exact = exact[id] { return exact }
-        if id.hasPrefix("wm:") { return .indigo }
         if id.hasPrefix("sys:") { return systemTint(id) }
         if id.hasPrefix("script:") { return .slate }
         if id.hasPrefix("ext:") {
