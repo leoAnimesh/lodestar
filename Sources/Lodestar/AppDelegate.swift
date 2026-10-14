@@ -5,37 +5,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var panel: LauncherPanel!
     private var model: LauncherViewModel!
     private var root: RootScreen!
+    private var frecency: FrecencyStore!
     private var hotKey: GlobalHotKey?
+    /// Global shortcuts bound to individual commands, keyed by command ID.
+    private var commandHotKeys: [String: GlobalHotKey] = [:]
     private var statusItem: NSStatusItem?
     private var keyMonitor: Any?
-    private var clipboard: ClipboardHistory?
+    /// Loaded even when recording is off, so Settings can count and clear it.
+    private var clipboard: ClipboardHistory!
     private var config = LodestarConfig()
     private var hotkeySpec = HotkeySpec.default
+    private var launcherPosition = LauncherPosition.upperThird
     private var openMenuItem: NSMenuItem?
-    private var settings: SettingsWindowController?  // created on first open
+    private let permissions = PermissionsMonitor()
+    private lazy var settingsModel = SettingsModel(host: self, permissions: permissions)
+    private var settings: SettingsWindowController?      // created on first open
+    private var onboarding: OnboardingWindowController?  // created on first open
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         config = LodestarConfig.load(from: LodestarPaths.configFile)
         ensureConfigDirectories()
 
-        let frecency = FrecencyStore(url: LodestarPaths.supportDirectory.appendingPathComponent("frecency.json"))
+        frecency = FrecencyStore(url: LodestarPaths.supportDirectory.appendingPathComponent("frecency.json"))
         let apps = AppIndex(extraDirectories: config.appDirectories ?? [])
-        if config.clipboardHistoryEnabled ?? true {
-            let history = ClipboardHistory(limit: config.clipboardHistoryLimit ?? 300,
-                                           storeURL: LodestarPaths.supportDirectory.appendingPathComponent("clipboard.json"))
-            history.start()
-            clipboard = history
-        }
+        clipboard = ClipboardHistory(limit: config.clipboardHistoryLimit ?? 300,
+                                     storeURL: LodestarPaths.supportDirectory.appendingPathComponent("clipboard.json"))
         let scripts = ScriptCommandStore(directory: LodestarPaths.scriptsDirectory)
         let extensions = ExtensionRegistry(directory: LodestarPaths.extensionsDirectory)
         scripts.reload()
         extensions.reload()
 
-        root = RootScreen(apps: apps, clipboard: clipboard, scripts: scripts, extensions: extensions, frecency: frecency)
+        root = RootScreen(apps: apps, clipboard: nil, scripts: scripts, extensions: extensions, frecency: frecency)
         root.onReload = {
             scripts.reload()
             extensions.reload()
         }
+        root.onOpenSettings = { [weak self] in self?.openSettings(tab: nil) }
+        root.onShowWelcome = { [weak self] in self?.showOnboarding() }
         model = LauncherViewModel(root: root, frecency: frecency)
         model.onHide = { [weak self] in self?.hidePanel() }
 
@@ -47,23 +53,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         installKeyMonitor()
-        installStatusItem()
         registerHotKey()
+        applyConfig(config)
 
-        // An accessory app shows nothing at launch, which looks like "nothing opened".
-        // Show the launcher the first time it runs (and with --show).
-        let firstRun = !UserDefaults.standard.bool(forKey: "didShowFirstLaunch")
-        if firstRun || CommandLine.arguments.contains("--show") {
-            UserDefaults.standard.set(true, forKey: "didShowFirstLaunch")
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--snapshot"), args.indices.contains(i + 1) {
+            SnapshotTour(app: self, output: URL(fileURLWithPath: args[i + 1])).start()
+            return
+        }
+
+        // First run shows the welcome window (it replaces the old "show the
+        // launcher on first launch"); --show still opens the launcher.
+        let defaults = UserDefaults.standard
+        let decision = Onboarding.launchDecision(
+            completedVersion: defaults.object(forKey: Onboarding.completedVersionKey) as? Int,
+            legacyDidShowFirstLaunch: defaults.bool(forKey: Onboarding.legacyFirstLaunchKey),
+            forceShow: args.contains("--onboarding"))
+        if let v = decision.storeCompletedVersion { defaults.set(v, forKey: Onboarding.completedVersionKey) }
+        if decision.removeLegacyKey { defaults.removeObject(forKey: Onboarding.legacyFirstLaunchKey) }
+        if decision.showOnboarding {
+            showOnboarding()
+        } else if args.contains("--show") {
             showPanel()
         }
         NSLog("Lodestar: running; press \(hotkeySpec) or use the menu bar icon to open the launcher")
     }
 
     /// Opening the app again (`open Lodestar.app`, Finder, Spotlight) while it is
-    /// already running shows the launcher instead of silently doing nothing.
+    /// already running shows the launcher (or the welcome window, if it's open).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showPanel()
+        if let onboarding, onboarding.window.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            onboarding.window.makeKeyAndOrderFront(nil)
+        } else {
+            showPanel()
+        }
         return false
     }
 
@@ -74,7 +98,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    // MARK: Hotkey
+    // MARK: Config
+
+    /// Applies everything in config.json that can change while running.
+    private func applyConfig(_ newConfig: LodestarConfig) {
+        config = newConfig
+        NSApp.appearance = {
+            switch AppearanceMode(configValue: newConfig.appearance) {
+            case .system: return nil
+            case .light: return NSAppearance(named: .aqua)
+            case .dark: return NSAppearance(named: .darkAqua)
+            }
+        }()
+        launcherPosition = LauncherPosition(configValue: newConfig.launcherPosition)
+        WindowManager.gap = WindowGap.clamp(newConfig.windowGap)
+
+        let recordClipboard = newConfig.clipboardHistoryEnabled ?? true
+        clipboard.limit = max(newConfig.clipboardHistoryLimit ?? 300, 1)
+        if recordClipboard {
+            if root.clipboard == nil { clipboard.start() }
+            root.clipboard = clipboard
+        } else {
+            clipboard.stop()
+            root.clipboard = nil
+        }
+
+        if newConfig.showMenuBarIcon ?? true {
+            if statusItem == nil { installStatusItem() }
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+
+        root.preferences = newConfig.commandPreferences
+        syncCommandHotKeys()
+        if panel.isVisible { model.refresh() }
+    }
+
+    // MARK: Hotkeys
 
     private func registerHotKey() {
         if let raw = config.hotkey {
@@ -89,6 +150,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    /// Makes the registered command shortcuts match `root.preferences`.
+    private func syncCommandHotKeys() {
+        let bindings = root.preferences.hotkeyBindings
+        let wanted = Set(bindings.map(\.id))
+        for id in commandHotKeys.keys where !wanted.contains(id) { commandHotKeys[id] = nil }
+        for (id, spec) in bindings {
+            if commandHotKeys[id]?.spec?.isSameShortcut(as: spec) == true { continue }
+            do {
+                try commandHotKey(for: id).register(spec)
+            } catch {
+                NSLog("Lodestar: could not register \(spec) for \(id): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func commandHotKey(for id: String) -> GlobalHotKey {
+        if let existing = commandHotKeys[id] { return existing }
+        let hk = GlobalHotKey { [weak self] in self?.runCommand(id) }
+        if hotKey?.isSuspended == true { hk.suspend() }
+        commandHotKeys[id] = hk
+        return hk
+    }
+
+    /// Runs a command from its own shortcut. Commands that just do something
+    /// (window layouts, system commands) run without showing the launcher;
+    /// commands with UI (clipboard history, extensions) open it.
+    func runCommand(_ id: String) {
+        guard let item = root.allItems().first(where: { $0.id == id }), let action = item.actions.first else { return }
+        if item.tracksUsage { frecency.recordUse(of: id) }
+        switch action.perform() {
+        case .close:
+            hidePanel()
+        case .closeThen(let work):
+            if panel.isVisible {
+                hidePanel()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+            } else {
+                work()
+            }
+        case .stay:
+            break
+        case .push(let screen):
+            showPanel()
+            model.push(screen)
+        case .detail(let title, let text):
+            showPanel()
+            model.showDetail(title: title, text: text)
+        case .toast(let message):
+            showPanel()
+            model.showToast(message)
+        }
+    }
+
     // MARK: Panel
 
     @objc func togglePanel() {
@@ -100,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if self?.panel.isVisible == true { self?.model.refresh() }
         }
         model.prepareForShow()
-        panel.positionOnActiveScreen()
+        panel.position(launcherPosition)
         panel.makeKeyAndOrderFront(nil)
     }
 
@@ -110,11 +224,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.popToRoot()
     }
 
+    /// For the snapshot tour: show the launcher with a query typed in.
+    func showPanel(query: String) {
+        showPanel()
+        model.query = query
+    }
+
+    var launcherWindow: NSWindow { panel }
+
     func windowDidResignKey(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === panel else { return }
         // Clicking elsewhere dismisses the launcher, like a popover.
         // Defer so that modal alerts we present ourselves don't count.
         DispatchQueue.main.async { [weak self] in
-            guard let self, NSApp.modalWindow == nil, !self.panel.isKeyWindow else { return }
+            guard let self, NSApp.modalWindow == nil, !self.panel.isKeyWindow, !SnapshotTour.isRunning else { return }
             self.hidePanel()
         }
     }
@@ -124,20 +247,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
-            if let settings = self.settings, event.window === settings.window, !settings.model.isRecording,
-               event.modifierFlags.contains(.command), event.keyCode == 13 {  // ⌘W (no main menu in an accessory app)
-                settings.window.performClose(nil)
-                return nil
+            let cmd = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+            // ⌘W and ⌘1…⌘6 in our ordinary windows (an accessory app has no main menu).
+            if cmd, !self.settingsModel.capture.isRecording {
+                if event.keyCode == 13, let window = event.window,
+                   window === self.settings?.window || window === self.onboarding?.window {
+                    window.performClose(nil)
+                    return nil
+                }
+                if let settings = self.settings, event.window === settings.window,
+                   let digit = Int(event.charactersIgnoringModifiers ?? ""), (1...SettingsTab.allCases.count).contains(digit) {
+                    settings.model.selectedTab = SettingsTab.allCases[digit - 1]
+                    return nil
+                }
             }
             guard event.window === self.panel else { return event }
-            let cmd = event.modifierFlags.contains(.command)
+            let command = event.modifierFlags.contains(.command)
             switch event.keyCode {
-            case 125: self.model.moveSelection(1); return nil                      // ↓
-            case 126: self.model.moveSelection(-1); return nil                     // ↑
-            case 36, 76: self.model.runSelected(actionIndex: cmd ? 1 : 0); return nil  // Return / Enter
-            case 53: self.model.escape(); return nil                               // Esc
-            case 40 where cmd: self.model.showActionPanel(); return nil            // ⌘K
-            case 43 where cmd: self.openSettings(); return nil                     // ⌘,
+            case 125: self.model.moveSelection(1); return nil                          // ↓
+            case 126: self.model.moveSelection(-1); return nil                         // ↑
+            case 36, 76: self.model.runSelected(actionIndex: command ? 1 : 0); return nil  // Return / Enter
+            case 53: self.model.escape(); return nil                                   // Esc
+            case 40 where command: self.model.showActionPanel(); return nil            // ⌘K
+            case 43 where command: self.openSettings(tab: nil); return nil             // ⌘,
             case 45 where event.modifierFlags.contains(.control): self.model.moveSelection(1); return nil  // ⌃N
             case 35 where event.modifierFlags.contains(.control): self.model.moveSelection(-1); return nil // ⌃P
             default: return event
@@ -155,50 +287,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         open.target = self
         menu.addItem(open)
         openMenuItem = open
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(.separator())
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettingsFromMenu), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
-        let reload = NSMenuItem(title: "Reload Scripts and Extensions", action: #selector(reloadExtensions), keyEquivalent: "")
+        let welcome = NSMenuItem(title: "Show Welcome…", action: #selector(showOnboardingFromMenu), keyEquivalent: "")
+        welcome.target = self
+        menu.addItem(welcome)
+        menu.addItem(.separator())
+        let reload = NSMenuItem(title: "Reload Scripts and Extensions", action: #selector(reloadFromMenu), keyEquivalent: "")
         reload.target = self
         menu.addItem(reload)
-        let config = NSMenuItem(title: "Open Config Folder", action: #selector(openConfig), keyEquivalent: "")
-        config.target = self
-        menu.addItem(config)
-        let ax = NSMenuItem(title: "Grant Accessibility Access…", action: #selector(requestAccessibility), keyEquivalent: "")
-        ax.target = self
-        menu.addItem(ax)
+        let configItem = NSMenuItem(title: "Open Config Folder", action: #selector(openConfig), keyEquivalent: "")
+        configItem.target = self
+        menu.addItem(configItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Lodestar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
     }
 
-    @objc func openSettings() {
-        hidePanel()
-        let settings = self.settings ?? SettingsWindowController(model: SettingsModel(host: self))
-        self.settings = settings
-        settings.show()
-    }
-
-    @objc private func reloadExtensions() {
-        root.onReload?()
-    }
+    @objc private func openSettingsFromMenu() { openSettings(tab: nil) }
+    @objc private func showOnboardingFromMenu() { showOnboarding() }
+    @objc private func reloadFromMenu() { reloadExtensions() }
 
     @objc private func openConfig() {
         NSWorkspace.shared.open(LodestarPaths.configDirectory)
     }
 
-    @objc private func requestAccessibility() {
-        if SystemActions.ensureAccessibility(prompt: true) {
-            let alert = NSAlert()
-            alert.messageText = "Accessibility access is already granted."
-            NSApp.activate(ignoringOtherApps: true)
-            alert.runModal()
+    // MARK: Windows
+
+    var settingsWindowController: SettingsWindowController {
+        if let settings { return settings }
+        let created = SettingsWindowController(model: settingsModel)
+        settings = created
+        return created
+    }
+
+    var onboardingWindowController: OnboardingWindowController {
+        if let onboarding { return onboarding }
+        let created = OnboardingWindowController(model: settingsModel)
+        created.onFinish = { [weak self] openLauncher in
+            if openLauncher { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.showPanel() } }
         }
+        onboarding = created
+        return created
     }
 }
 
-// MARK: Settings
+// MARK: Settings host
 
 extension AppDelegate: SettingsHost {
     var currentHotkey: HotkeySpec { hotKey?.spec ?? hotkeySpec }
@@ -221,7 +358,46 @@ extension AppDelegate: SettingsHost {
         openMenuItem?.title = "Open Lodestar (\(spec))"
     }
 
-    func setHotkeySuspended(_ suspended: Bool) {
-        suspended ? hotKey?.suspend() : hotKey?.resume()
+    func setHotkeysSuspended(_ suspended: Bool) {
+        for hk in [hotKey].compactMap({ $0 }) + Array(commandHotKeys.values) {
+            suspended ? hk.suspend() : hk.resume()
+        }
+    }
+
+    func registerCommandHotkey(_ spec: HotkeySpec?, for id: String) throws {
+        guard let spec else { commandHotKeys[id] = nil; return }
+        let isNew = commandHotKeys[id] == nil
+        do {
+            try commandHotKey(for: id).register(spec)
+        } catch {
+            if isNew { commandHotKeys[id] = nil }
+            throw error
+        }
+    }
+
+    func configDidChange(_ config: LodestarConfig) {
+        applyConfig(config)
+    }
+
+    func commandCatalog() -> [RootScreen.CatalogEntry] { root.catalog() }
+
+    func reloadExtensions() {
+        root.onReload?()
+        if panel.isVisible { model.refresh() }
+    }
+
+    func clipboardEntryCount() -> Int { clipboard.entries.count }
+    func clearClipboardHistory() { clipboard.clear() }
+
+    func showLauncher() { showPanel() }
+
+    func showOnboarding() {
+        hidePanel()
+        onboardingWindowController.show()
+    }
+
+    func openSettings(tab: SettingsTab?) {
+        hidePanel()
+        settingsWindowController.show(tab: tab)
     }
 }

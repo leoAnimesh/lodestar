@@ -9,13 +9,16 @@ An open-source, keyboard-driven launcher for macOS. Press **⌥Space**, type a f
 | Feature | Notes |
 | --- | --- |
 | Global hotkey | ⌥Space by default (Carbon `RegisterEventHotKey`; needs no permission). Change it in Settings with the shortcut recorder; it applies immediately, no restart. |
-| Settings window | Shortcut recorder, launch at login (`SMAppService`), clipboard-history options. Open it from the menu-bar item or with ⌘, in the launcher. |
+| Welcome window | First-run onboarding: shortcut, permissions (live status), launch at login, an interactive feature tour. Reopen it any time with **Show Welcome…** in the menu bar. |
+| Settings window | Tabs for General, Extensions, Clipboard, Windows, Advanced and About. Open it from the menu-bar item, with ⌘, in the launcher, or with the **Lodestar Settings** command. |
+| Per-command settings | Turn any command off, give it an alias, or bind it to its own global hotkey (Settings › Extensions). |
 | Floating launcher panel | Non-activating `NSPanel`, so your current app stays frontmost and paste/window actions target it. |
+| Command icons | Built-in commands show a white SF Symbol on a colored, gently graded tile. App icons are shown as-is. Colors are set in one place, `UI/IconTint.swift`; extensions get a stable hashed color. |
 | App search | Scans `/Applications`, `/System/Applications`, `~/Applications`, etc. |
 | Fuzzy ranking | DP-based subsequence matcher with word-start/acronym/consecutive bonuses, blended with **frecency** (use count with a 7-day half-life). Matched letters are bolded. |
 | Calculator | Inline results for expressions like `2^10 / 3`, `sqrt(2)*pi`, `5!`, `3 x 4`. Return copies, ⌘Return pastes. |
 | Clipboard history | Text only, up to 300 entries, stored owner-only (0600) in `~/Library/Application Support/Lodestar/clipboard.json`. Skips items that password managers mark concealed or transient. |
-| Window management | Halves, thirds, two-thirds, maximize, almost maximize, center, next display (Accessibility API). |
+| Window management | Halves, thirds, two-thirds, maximize, almost maximize, center, next display (Accessibility API), with an optional gap around snapped windows. |
 | System commands | Lock, Sleep, Sleep Displays, Restart, Shut Down, Log Out, Empty Trash, Toggle Dark Mode, Hide All Apps, Quit All Apps, Eject All Disks. Destructive ones ask for confirmation. |
 | File search | Spotlight-backed (`NSMetadataQuery`), scoped to your home folder. |
 | Script commands | Any executable script with `@lodestar.*` metadata comments. |
@@ -31,6 +34,7 @@ An open-source, keyboard-driven launcher for macOS. Press **⌥Space**, type a f
 | ⌘Return | Secondary action |
 | ⌘K | Show all actions for the selected item |
 | ⌘, | Open Settings |
+| ⌘1 … ⌘6 | Switch Settings tabs (in the Settings window) |
 | Esc | Close the detail view, go back, clear the query, then hide |
 
 ## Build & run
@@ -41,12 +45,28 @@ Requires macOS 13+ and a Swift 5.9+ toolchain (Xcode or the Command Line Tools).
 swift build                 # debug build
 swift test                  # unit tests (+ a Node protocol test if `node` is installed)
 swift run Lodestar --show   # run and show the panel immediately
+swift run Lodestar --onboarding  # run and open the welcome window
 
 ./scripts/bundle.sh         # release build wrapped as build/Lodestar.app (ad-hoc signed)
 open build/Lodestar.app
 ```
 
-Lodestar runs as a menu-bar accessory: it has no Dock icon and shows a magnifying-glass status item.
+Lodestar runs as a menu-bar accessory: it has no Dock icon and shows a magnifying-glass status item (you can hide it in Settings › General). The bundle script also renders the app icon, which is drawn in code (`UI/Brand.swift`), into `AppIcon.icns`.
+
+## First run
+
+The first launch opens the **welcome window** instead of the launcher. It has six steps with progress dots and Back/Continue:
+
+1. **Welcome.**
+2. **Shortcut.** Record a new launcher shortcut. Picking ⌘Space (or another combo macOS already uses) shows a warning, with a button to System Settings › Keyboard.
+3. **Permissions.** Accessibility, Automation and (optional) Full Disk Access, each with a live status that updates within about a second of a change in System Settings, and a button that opens the system prompt or the right pane. Nothing is changed for you.
+4. **Launch at login** and the menu-bar icon.
+5. **Tour.** A working mini launcher: try fuzzy search, the ⌘K action panel, clipboard history, window layouts and the calculator.
+6. **Done.** Shows your shortcut and opens the launcher.
+
+Finishing or closing the window records `onboardingCompletedVersion` in UserDefaults, so it doesn't open again. To see it again, choose **Show Welcome…** from the menu bar, run the **Show Welcome Screen** command, use **Settings › Advanced › Welcome screen** (**Show Now**, or **Reset** to show it at next launch), or launch with `--onboarding`.
+
+*Upgrading:* earlier builds set `didShowFirstLaunch` when they showed the launcher on first run. That flag is migrated to "onboarding completed" and removed, so existing users aren't interrupted.
 
 **Permissions.** Window management, auto-paste (⌘V synthesis) and Lock Screen need **Accessibility** access. Grant it in System Settings › Privacy & Security › Accessibility, or use the status-bar menu item. Run the bundled `.app` rather than the bare binary, because otherwise macOS attributes the permission to your terminal. System commands that use Apple Events will prompt for **Automation** the first time.
 
@@ -61,23 +81,50 @@ Lodestar runs as a menu-bar accessory: it has no Dock icon and shows a magnifyin
   "hotkey": "cmd+shift+space",
   "appDirectories": ["~/Dev/Apps"],
   "clipboardHistoryLimit": 300,
-  "clipboardHistoryEnabled": true
+  "clipboardHistoryEnabled": true,
+  "appearance": "dark",
+  "launcherPosition": "center",
+  "showMenuBarIcon": true,
+  "windowGap": 8,
+  "commands": {
+    "cmd:files": { "enabled": false },
+    "cmd:clipboard": { "alias": "cb" },
+    "wm:Left Half": { "hotkey": "ctrl+option+left" }
+  }
 }
 ```
 
+- `appearance`: `system` (default), `light` or `dark`.
+- `launcherPosition`: `upperThird` (default) or `center`.
+- `windowGap`: points of space around snapped windows, 0–32.
+- `commands`: per-command settings keyed by command ID (shown in Settings › Extensions). Only changed values are stored.
+
 The Settings window reads and writes this same file. It rewrites only the keys it manages and leaves any other keys alone. If the file isn't valid JSON, Settings shows an error instead of overwriting it.
 
-- `hotkey` changes from Settings take effect immediately. The default (⌥Space) is stored by omitting the key.
-- Hand edits to the file, and the clipboard options, are read at launch, so restart Lodestar after changing them.
+- Changes made in Settings take effect immediately. Defaults are stored by omitting the key.
+- Hand edits to the file are read at launch, so restart Lodestar after editing it.
 - Scripts and extensions can be reloaded live with the **Reload Scripts and Extensions** command.
 
 ## Settings
 
-Open **Settings…** from the menu-bar item, or press **⌘,** while the launcher is open.
+Open **Settings…** from the menu-bar item, press **⌘,** while the launcher is open, or run **Lodestar Settings**. The window has a tab bar (⌘1–⌘6):
 
-- **Shortcut.** Click the shortcut field, then press the new combo. It must include ⌘, ⌥ or ⌃ (Shift alone isn't enough). **Esc** cancels, and **Delete** restores ⌥Space. The new shortcut is registered right away and saved to `config.json` in the same `"option+space"` format the parser reads. While the field is recording, the global shortcut is paused so pressing the current combo doesn't toggle the launcher. If the combo can't be registered, an inline error appears and the previous shortcut stays active. macOS doesn't always report conflicts with other apps' shortcuts, so if the new combo does nothing, pick another.
-- **Launch at login.** Uses `SMAppService.mainApp` (macOS 13+). **This only works when running the bundled `build/Lodestar.app`** from `./scripts/bundle.sh`. When run via `swift run`, the toggle is disabled. If macOS asks for approval, Settings links to System Settings › General › Login Items. Move the app to a stable location (for example `/Applications`) before enabling it, since the login item points at the app's current path.
-- **Clipboard history.** Enable or disable it and set how many entries are kept. Applies on next launch.
+- **General.** The launcher shortcut, launch at login, appearance (System/Light/Dark), launcher position (upper third or center), and the menu-bar icon.
+  - *Shortcut recorder.* Click the field and press the new combo. It must include ⌘, ⌥ or ⌃. **Esc** cancels and **Delete** restores ⌥Space. While recording, all global shortcuts are paused. If the combo can't be registered, an inline error appears and the previous shortcut stays active. Known system shortcuts such as ⌘Space (Spotlight) show a warning, because macOS keeps them even though registration "succeeds".
+  - *Launch at login* uses `SMAppService.mainApp` and **only works in the bundled `build/Lodestar.app`**. With `swift run` the toggle is disabled. If macOS needs approval, a button opens System Settings › General › Login Items. Move the app somewhere stable (for example `/Applications`) first.
+  - *Menu-bar icon.* If you hide it, use ⌘, in the launcher or the **Lodestar Settings** command. Opening Lodestar.app again shows the launcher.
+- **Extensions.** Every command (built-ins, window layouts, system commands, script commands and extension commands) in a searchable table grouped by source, with a type filter. Each row has:
+  - an **enable** checkbox (disabled commands disappear from search and lose their hotkey; section headers toggle a whole group),
+  - an **alias** (typing it exactly in the launcher puts that command first),
+  - a **hotkey** that runs the command from anywhere.
+
+  A detail pane shows the selected command's description, ID and file location. A menu reveals the scripts and extensions folders and reloads them. Applications aren't listed and are always searchable.
+- **Clipboard.** Turn history on or off, set how many entries to keep, and clear it. All of these apply immediately.
+- **Windows.** The Accessibility status, a gap slider, and every layout with its own hotkey and enable switch.
+- **Advanced.** Live permission statuses (Accessibility, Automation, Full Disk Access) with buttons that open the right System Settings pane, locations of the config file and folders, **Welcome screen** (show now, or reset so it opens at the next launch), and **Reset** for all command settings.
+- **About.** Version, license and credits.
+
+Command hotkeys that do something directly, such as window layouts and system commands, run without opening the launcher. Commands with UI, such as Clipboard History or extensions, open it.
 
 ## Script commands
 
@@ -181,11 +228,20 @@ Sources/
     ScriptCommand.swift    script metadata parser
     ExtensionProtocol.swift manifest + wire messages + line framing
     Config.swift           config file (load + key-preserving save) + paths
+    CommandPreferences.swift  enable/alias/hotkey model, conflicts, command catalog search
+    AppPreferences.swift   appearance, launcher position, window gap, system-shortcut
+                           conflicts, onboarding launch decision/migration
   Lodestar/                the app
     main.swift, AppDelegate.swift   accessory app, status item, key routing
     GlobalHotKey.swift     Carbon RegisterEventHotKey wrapper (live re-register, suspend)
-    SettingsWindow.swift   settings model, hotkey recorder event monitor, window
-    SettingsView.swift     SwiftUI settings form + recorder control
+    SettingsWindow.swift   SettingsHost protocol, shared settings model, window
+    SettingsView.swift     tab bar + General/Clipboard/Windows/Advanced/About pages
+    SettingsExtensionsView.swift  command table, aliases, hotkeys, detail pane
+    ShortcutCapture.swift  one recorder for the launcher and command shortcuts
+    Permissions.swift      live Accessibility/Automation/Full Disk Access status
+    Onboarding/            welcome window, steps, interactive tour
+    UI/                    brand mark + icon renderer, settings components, IconTint
+    SnapshotTour.swift     `--snapshot <dir>`: steps through every screen for screenshots
     LaunchAtLogin.swift    SMAppService.mainApp wrapper
     LauncherPanel.swift    floating non-activating NSPanel + vibrancy
     LauncherViewModel.swift screen stack, selection, ⌘K action panel
@@ -215,7 +271,6 @@ Lodestar deliberately takes a much simpler route. The UI is native SwiftUI, ther
 - Quicklinks with `{query}` placeholders
 - Image clipboard entries; pinned entries
 - Richer extension UI: forms, grids, markdown rendering, preferences
-- Per-command hotkeys and aliases
 - Unit conversions and currency in the calculator
 
 ## License

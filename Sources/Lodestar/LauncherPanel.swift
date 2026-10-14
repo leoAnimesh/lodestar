@@ -1,24 +1,24 @@
 import AppKit
 import SwiftUI
+import LodestarCore
 
 /// A borderless, floating, non-activating panel. Non-activating means the
 /// user's current app stays frontmost while we take keyboard focus, so
 /// "paste" and "window management" actions target the right app.
+///
+/// It is deliberately *not* `.titled`: a titled window (even with a hidden,
+/// transparent title bar) makes SwiftUI reserve a ~28pt title-bar safe area,
+/// which showed up as an empty band above the search field.
 final class LauncherPanel: NSPanel {
     static let size = NSSize(width: 700, height: 440)
 
     init<Content: View>(rootView: Content) {
         super.init(
             contentRect: NSRect(origin: .zero, size: LauncherPanel.size),
-            styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
+            styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        titleVisibility = .hidden
-        titlebarAppearsTransparent = true
-        standardWindowButton(.closeButton)?.isHidden = true
-        standardWindowButton(.miniaturizeButton)?.isHidden = true
-        standardWindowButton(.zoomButton)?.isHidden = true
         isMovableByWindowBackground = true
         isFloatingPanel = true
         level = .floating
@@ -37,8 +37,11 @@ final class LauncherPanel: NSPanel {
         visual.wantsLayer = true
         visual.layer?.cornerRadius = 14
         visual.layer?.masksToBounds = true
+        visual.layer?.cornerCurve = .continuous
+        visual.layer?.borderWidth = 0.5
+        visual.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
 
-        let hosting = NSHostingView(rootView: rootView)
+        let hosting = NSHostingView(rootView: rootView.ignoresSafeArea())
         hosting.translatesAutoresizingMaskIntoConstraints = false
         visual.addSubview(hosting)
         NSLayoutConstraint.activate([
@@ -53,15 +56,11 @@ final class LauncherPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    /// Centers horizontally on the screen containing the mouse, in the upper third.
-    func positionOnActiveScreen() {
+    /// Places the panel on the screen containing the mouse (Settings › General › Launcher Position).
+    func position(_ position: LauncherPosition) {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let origin = NSPoint(
-            x: visible.midX - frame.width / 2,
-            y: visible.minY + visible.height * 0.68 - frame.height / 2
-        )
-        setFrameOrigin(origin)
+        setFrameOrigin(position.origin(panelSize: frame.size, visibleFrame: visible))
     }
 }

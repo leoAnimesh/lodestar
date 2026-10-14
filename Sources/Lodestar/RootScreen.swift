@@ -9,11 +9,15 @@ final class RootScreen: ListScreen {
     weak var host: ScreenHost?
 
     let apps: AppIndex
-    let clipboard: ClipboardHistory?
+    var clipboard: ClipboardHistory?
     let scripts: ScriptCommandStore
     let extensions: ExtensionRegistry
     let frecency: FrecencyStore
     var onReload: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
+    var onShowWelcome: (() -> Void)?
+    /// Enable/alias/hotkey settings; disabled commands never appear in search.
+    var preferences = CommandPreferences()
 
     init(apps: AppIndex, clipboard: ClipboardHistory?, scripts: ScriptCommandStore, extensions: ExtensionRegistry, frecency: FrecencyStore) {
         self.apps = apps
@@ -36,7 +40,7 @@ final class RootScreen: ListScreen {
             for id in ["cmd:clipboard", "cmd:files", "wm:Left Half", "wm:Right Half", "wm:Maximize"] where !result.contains(where: { $0.id == id }) {
                 if let item = byID[id] { result.append(item) }
             }
-            return result
+            return result.map(RootScreen.withTile)
         }
 
         var results: [LauncherItem] = []
@@ -46,9 +50,18 @@ final class RootScreen: ListScreen {
 
         let candidates = all.map { SearchCandidate(id: $0.id, title: $0.title, keywords: $0.keywords) }
         let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for ranked in Ranker.rank(candidates, query: trimmed, frecency: frecency, limit: 40) {
-            guard var item = byID[ranked.candidate.id] else { continue }
-            item.matchedIndices = ranked.matchedIndices
+        var ranked: [String: [Int]] = [:]
+        var order: [String] = []
+        for r in Ranker.rank(candidates, query: trimmed, frecency: frecency, limit: 40) {
+            ranked[r.candidate.id] = r.matchedIndices
+            order.append(r.candidate.id)
+        }
+        // An exact alias match goes first, even if fuzzy ranking missed it.
+        order = preferences.promotingAlias(of: trimmed, in: order, available: Set(byID.keys))
+        for id in order {
+            guard var item = byID[id] else { continue }
+            item.matchedIndices = ranked[id] ?? []
+            if ranked[id] == nil, let alias = preferences.alias(for: id) { item.accessory = "Alias “\(alias)”" }
             results.append(item)
         }
 
@@ -59,7 +72,14 @@ final class RootScreen: ListScreen {
                                         tracksUsage: false))
         }
         results.append(webSearchItem(trimmed))
-        return results
+        return results.map(RootScreen.withTile)
+    }
+
+    /// Gives built-in command icons their colored tile (IconTint).
+    static func withTile(_ item: LauncherItem) -> LauncherItem {
+        var copy = item
+        copy.icon = item.icon.tinted(for: item.id)
+        return copy
     }
 
     private func urlFromQuery(_ q: String) -> URL? {
@@ -82,7 +102,7 @@ final class RootScreen: ListScreen {
     private func calculatorItem(expression: String, value: Double) -> LauncherItem {
         let formatted = Calculator.format(value)
         return LauncherItem(
-            id: "calc", title: formatted, subtitle: "= \(expression)", icon: .symbol("equal.square"),
+            id: "calc", title: formatted, subtitle: "= \(expression)", icon: .symbol("equal"),
             accessory: "Calculator",
             actions: [
                 LauncherAction("Copy Result", symbol: "doc.on.doc") { SystemActions.copy(formatted); return .close },
@@ -94,9 +114,82 @@ final class RootScreen: ListScreen {
 
     // MARK: Item sources
 
+    /// Everything searchable: apps plus enabled commands, with aliases added as keywords.
     func allItems() -> [LauncherItem] {
-        appItems() + builtinCommands() + windowCommands() + systemCommands() + scriptItems() + extensionItems()
+        let commands = preferences.enabledOnly(commandItems(), id: \.id).map { item -> LauncherItem in
+            guard let alias = preferences.alias(for: item.id) else { return item }
+            var copy = item
+            copy.keywords.append(alias)
+            return copy
+        }
+        return appItems() + commands
     }
+
+    /// Every command, enabled or not (apps excluded).
+    func commandItems() -> [LauncherItem] {
+        builtinCommands() + windowCommands() + systemCommands() + scriptItems() + extensionItems()
+    }
+
+    /// One row per command for Settings › Extensions.
+    struct CatalogEntry {
+        let descriptor: CommandDescriptor
+        let icon: ItemIcon
+        /// A file or folder to reveal (script file, extension folder).
+        let location: URL?
+        let summary: String
+    }
+
+    func catalog() -> [CatalogEntry] {
+        var entries: [CatalogEntry] = []
+        for item in builtinCommands() {
+            entries.append(CatalogEntry(
+                descriptor: CommandDescriptor(id: item.id, title: item.title, subtitle: item.subtitle, kind: .command, group: "Lodestar", keywords: item.keywords),
+                icon: item.icon.tinted(for: item.id), location: nil, summary: RootScreen.builtinSummaries[item.id] ?? "A built-in Lodestar command."))
+        }
+        for item in windowCommands() {
+            entries.append(CatalogEntry(
+                descriptor: CommandDescriptor(id: item.id, title: item.title, subtitle: "Window Management", kind: .window, group: "Window Management", keywords: item.keywords),
+                icon: item.icon.tinted(for: item.id), location: nil,
+                summary: "Moves and resizes the focused window of the frontmost app. Needs Accessibility access."))
+        }
+        for item in systemCommands() {
+            entries.append(CatalogEntry(
+                descriptor: CommandDescriptor(id: item.id, title: item.title, subtitle: "System", kind: .system, group: "System", keywords: item.keywords),
+                icon: item.icon.tinted(for: item.id), location: nil,
+                summary: "A system command. Some of these ask for Automation access the first time they run."))
+        }
+        for cmd in scripts.commands {
+            entries.append(CatalogEntry(
+                descriptor: CommandDescriptor(id: "script:\(cmd.path)", title: cmd.title, subtitle: cmd.description ?? cmd.packageName,
+                                              kind: .script, group: "Script Commands", keywords: cmd.keywords),
+                icon: ItemIcon.parse(cmd.icon, fallback: "terminal").tinted(for: "script:\(cmd.path)"), location: URL(fileURLWithPath: cmd.path),
+                summary: cmd.description ?? "Runs \((cmd.path as NSString).lastPathComponent) (\(cmd.mode.rawValue) output)."))
+        }
+        for installed in extensions.extensions {
+            for cmd in installed.manifest.commands {
+                entries.append(CatalogEntry(
+                    descriptor: CommandDescriptor(id: "ext:\(installed.manifest.name)/\(cmd.name)", title: cmd.title,
+                                                  subtitle: cmd.subtitle ?? installed.manifest.title, kind: .extension,
+                                                  group: installed.manifest.title, keywords: cmd.keywords ?? []),
+                    icon: ItemIcon.parse(cmd.icon ?? installed.manifest.icon, fallback: "puzzlepiece.extension")
+                        .tinted(for: "ext:\(installed.manifest.name)/\(cmd.name)"),
+                    location: installed.directory,
+                    summary: installed.manifest.description ?? "An extension command (\(cmd.mode.rawValue))."))
+            }
+        }
+        return entries
+    }
+
+    static let builtinSummaries: [String: String] = [
+        "cmd:clipboard": "Browse and search text you've copied. Return pastes into the frontmost app.",
+        "cmd:files": "Finds files in your home folder with Spotlight as you type.",
+        "cmd:reload": "Re-reads the scripts and extensions folders.",
+        "cmd:config": "Opens ~/.config/lodestar in Finder.",
+        "cmd:new-script": "Creates a script command from a template and reveals it in Finder.",
+        "cmd:settings": "Opens this window.",
+        "cmd:welcome": "Opens the welcome tour again.",
+        "cmd:quit": "Quits Lodestar.",
+    ]
 
     private func appItems() -> [LauncherItem] {
         apps.apps.map { app in
@@ -167,6 +260,14 @@ final class RootScreen: ListScreen {
             try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
             SystemActions.reveal(url.path)
             return .close
+        })
+        items.append(command("cmd:settings", "Lodestar Settings", subtitle: "Lodestar", symbol: "gearshape",
+                             keywords: ["preferences", "settings", "extensions"]) { [weak self] in
+            .closeThen { self?.onOpenSettings?() }
+        })
+        items.append(command("cmd:welcome", "Show Welcome Screen", subtitle: "Lodestar", symbol: "sparkles",
+                             keywords: ["onboarding", "tour", "help", "permissions"]) { [weak self] in
+            .closeThen { self?.onShowWelcome?() }
         })
         items.append(command("cmd:quit", "Quit Lodestar", subtitle: "Lodestar", symbol: "power") {
             NSApp.terminate(nil); return .close

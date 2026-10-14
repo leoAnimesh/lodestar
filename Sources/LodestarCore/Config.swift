@@ -10,12 +10,34 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
     public var clipboardHistoryLimit: Int?
     /// Set false to disable clipboard history entirely.
     public var clipboardHistoryEnabled: Bool?
+    /// "system" (default), "light" or "dark".
+    public var appearance: String?
+    /// "upperThird" (default) or "center".
+    public var launcherPosition: String?
+    /// Set false to hide the menu-bar icon.
+    public var showMenuBarIcon: Bool?
+    /// Points of space around snapped windows (0-32).
+    public var windowGap: Int?
+    /// Per-command enable/alias/hotkey settings, keyed by command ID.
+    public var commands: [String: CommandSettings]?
 
-    public init(hotkey: String? = nil, appDirectories: [String]? = nil, clipboardHistoryLimit: Int? = nil, clipboardHistoryEnabled: Bool? = nil) {
+    public init(hotkey: String? = nil, appDirectories: [String]? = nil, clipboardHistoryLimit: Int? = nil, clipboardHistoryEnabled: Bool? = nil,
+                appearance: String? = nil, launcherPosition: String? = nil, showMenuBarIcon: Bool? = nil, windowGap: Int? = nil,
+                commands: [String: CommandSettings]? = nil) {
         self.hotkey = hotkey
         self.appDirectories = appDirectories
         self.clipboardHistoryLimit = clipboardHistoryLimit
         self.clipboardHistoryEnabled = clipboardHistoryEnabled
+        self.appearance = appearance
+        self.launcherPosition = launcherPosition
+        self.showMenuBarIcon = showMenuBarIcon
+        self.windowGap = windowGap
+        self.commands = commands
+    }
+
+    public var commandPreferences: CommandPreferences {
+        get { CommandPreferences(commands) }
+        set { commands = newValue.configValue }
     }
 
     public static func load(from url: URL) -> LodestarConfig {
@@ -27,7 +49,8 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
     }
 
     /// Keys this type owns in config.json. Any other keys are left untouched on save.
-    static let knownKeys = ["hotkey", "appDirectories", "clipboardHistoryLimit", "clipboardHistoryEnabled"]
+    static let knownKeys = ["hotkey", "appDirectories", "clipboardHistoryLimit", "clipboardHistoryEnabled",
+                            "appearance", "launcherPosition", "showMenuBarIcon", "windowGap", "commands"]
 
     /// Reads the config at `url`, applies `change`, and writes it back atomically.
     /// Unknown keys are preserved. If the file exists but can't be parsed, nothing

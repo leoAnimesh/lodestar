@@ -14,7 +14,9 @@ final class ClipboardHistory {
     private(set) var entries: [Entry] = []
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var timer: Timer?
-    private let limit: Int
+    var limit: Int {
+        didSet { if entries.count > limit { entries.removeLast(entries.count - limit); save() } }
+    }
     private let storeURL: URL
 
     static let ignoredTypes: Set<String> = [

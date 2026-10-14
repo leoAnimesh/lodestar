@@ -18,7 +18,7 @@ struct LauncherView: View {
             Divider().opacity(0.5)
             footer
         }
-        .frame(width: LauncherPanel.size.width, height: LauncherPanel.size.height)
+        .frame(width: LauncherPanel.size.width, height: LauncherPanel.size.height, alignment: .top)
         .onAppear { searchFocused = true }
         .onChange(of: model.focusToken) { _ in searchFocused = true }
     }
@@ -40,7 +40,7 @@ struct LauncherView: View {
                 .focused($searchFocused)
         }
         .padding(.horizontal, 18)
-        .frame(height: 58)
+        .frame(height: 54)
     }
 
     private var resultsList: some View {
@@ -156,6 +156,8 @@ struct ItemIconView: View {
         switch icon {
         case .file(let path):
             Image(nsImage: IconCache.shared.icon(forPath: path)).resizable().aspectRatio(contentMode: .fit)
+        case .tinted(let name, let tint):
+            TintedSymbolTile(symbol: name, tint: tint, size: 26)
         case .symbol(let name):
             Image(systemName: name)
                 .font(.system(size: 14, weight: .medium))

@@ -32,6 +32,8 @@ struct LauncherAction {
 enum ItemIcon: Equatable {
     case file(String)
     case symbol(String)
+    /// A white symbol on a colored tile (built-in commands; see IconTint).
+    case tinted(String, IconTint)
     case text(String)
 
     /// Extension/script icons may be an emoji, an SF Symbol name prefixed

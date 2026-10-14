@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import LodestarCore
 
 /// Moves/resizes the focused window of the frontmost app through the
 /// Accessibility API (AXUIElement). Requires the Accessibility permission.
@@ -60,6 +61,9 @@ enum WindowManager {
         }
     }
 
+    /// Space around snapped windows, from Settings › Window Management.
+    static var gap = 0
+
     static func apply(_ layout: Layout) -> Result<Void, WMError> {
         guard SystemActions.ensureAccessibility(prompt: true) else { return .failure(.notTrusted) }
         guard let app = NSWorkspace.shared.frontmostApplication,
@@ -78,7 +82,9 @@ enum WindowManager {
         if layout == .nextDisplay, screens.count > 1 { screenIndex = (screenIndex + 1) % screens.count }
         guard screens.indices.contains(screenIndex) else { return .failure(.failed) }
 
-        let target = layout.frame(in: screens[screenIndex].visibleFrame, current: cocoaFrame)
+        let visible = screens[screenIndex].visibleFrame
+        var target = layout.frame(in: visible, current: cocoaFrame)
+        if layout != .center && layout != .nextDisplay { target = WindowGap.apply(gap, to: target, in: visible) }
         let axTarget = toAX(target)
         // Size → position → size: some apps clamp size against the old position.
         setSize(window, axTarget.size)
