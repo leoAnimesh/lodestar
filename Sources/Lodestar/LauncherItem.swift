@@ -35,6 +35,8 @@ enum ItemIcon: Equatable {
     /// A white symbol on a colored tile (built-in commands; see IconTint).
     case tinted(String, IconTint)
     case text(String)
+    /// A filled color swatch (sRGB components 0...1), e.g. Color History rows.
+    case swatch(red: Double, green: Double, blue: Double)
 
     /// Extension/script icons may be an emoji, an SF Symbol name prefixed
     /// with "sf:", or an absolute file path.

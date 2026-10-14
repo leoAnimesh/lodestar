@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotkeySpec = HotkeySpec.default
     private var launcherPosition = LauncherPosition.upperThird
     private var openMenuItem: NSMenuItem?
+    /// Keeps the Mac awake on request; drives the menu-bar cup indicator.
+    let caffeinator = Caffeinator()
+    private var stopCaffeinateItem: NSMenuItem?
     private let permissions = PermissionsMonitor()
     private lazy var settingsModel = SettingsModel(host: self, permissions: permissions)
     private var settings: SettingsWindowController?      // created on first open
@@ -42,6 +45,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         root.onOpenSettings = { [weak self] in self?.openSettings(tab: nil) }
         root.onShowWelcome = { [weak self] in self?.showOnboarding() }
+        root.colorPicker = ColorPicker(storeURL: LodestarPaths.supportDirectory.appendingPathComponent("colors.json"))
+        root.caffeinator = caffeinator
+        caffeinator.onChange = { [weak self] in
+            guard let self else { return }
+            self.updateCaffeinateIndicator()
+            if self.panel?.isVisible == true { self.model.refresh() }
+        }
         model = LauncherViewModel(root: root, frecency: frecency)
         model.onHide = { [weak self] in self?.hidePanel() }
 
@@ -77,6 +87,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showPanel()
         }
         NSLog("Lodestar: running; press \(hotkeySpec) or use the menu bar icon to open the launcher")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // macOS would drop the assertion with the process anyway; be explicit.
+        caffeinator.stop()
     }
 
     /// Opening the app again (`open Lodestar.app`, Finder, Spotlight) while it is
@@ -230,7 +245,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.query = query
     }
 
+    /// For the snapshot tour: show the launcher with a sub-screen pushed.
+    func showPanel(pushing screen: ListScreen) {
+        showPanel()
+        model.push(screen)
+    }
+
     var launcherWindow: NSWindow { panel }
+    var statusItemWindow: NSWindow? { statusItem?.button?.window }
 
     func windowDidResignKey(_ notification: Notification) {
         guard (notification.object as? NSWindow) === panel else { return }
@@ -287,6 +309,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         open.target = self
         menu.addItem(open)
         openMenuItem = open
+        let stopCaffeinate = NSMenuItem(title: "Stop Caffeinate", action: #selector(stopCaffeinateFromMenu), keyEquivalent: "")
+        stopCaffeinate.target = self
+        stopCaffeinate.image = NSImage(systemSymbolName: "cup.and.saucer.fill", accessibilityDescription: nil)
+        menu.addItem(stopCaffeinate)
+        stopCaffeinateItem = stopCaffeinate
         menu.addItem(.separator())
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettingsFromMenu), keyEquivalent: ",")
         settingsItem.target = self
@@ -305,6 +332,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(NSMenuItem(title: "Quit Lodestar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
+        updateCaffeinateIndicator()
+    }
+
+    /// While Caffeinate is on, the menu-bar icon becomes a filled cup and the
+    /// menu offers "Stop Caffeinate (42m left)".
+    private func updateCaffeinateIndicator() {
+        let active = caffeinator.isActive
+        let symbol = active ? "cup.and.saucer.fill" : "sparkle.magnifyingglass"
+        statusItem?.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: active ? "Lodestar — Caffeinate is on" : "Lodestar")
+        statusItem?.button?.toolTip = active ? "Caffeinate: \(caffeinator.statusText ?? "on")" : nil
+        stopCaffeinateItem?.isHidden = !active
+        if active, let status = caffeinator.statusText {
+            let detail = status.replacingOccurrences(of: "Active — ", with: "")
+            stopCaffeinateItem?.title = "Stop Caffeinate (\(detail))"
+        }
+    }
+
+    @objc private func stopCaffeinateFromMenu() {
+        caffeinator.stop()
+        HUD.show("Decaffeinated — your Mac can sleep", symbol: "moon.zzz")
     }
 
     @objc private func openSettingsFromMenu() { openSettings(tab: nil) }
