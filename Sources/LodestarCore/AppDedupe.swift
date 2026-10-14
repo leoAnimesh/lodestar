@@ -9,8 +9,9 @@ public struct AppCandidate: Hashable {
     public let resolvedPath: String
     public let bundleID: String?
     public let version: String?
-    /// True for apps macOS marks `LSDefaultSystemHidden` (helper launchers
-    /// such as /System/Applications/Siri.app that are not meant to be listed).
+    /// True for apps macOS marks `LSDefaultSystemHidden`. Several of these
+    /// share one localized display name (Siri.app and Siri AI.app both show
+    /// as "Siri"), so they are also deduplicated by name.
     public let isSystemHidden: Bool
 
     public init(name: String, path: String, resolvedPath: String? = nil, bundleID: String? = nil,
@@ -36,8 +37,8 @@ public enum AppDedupe {
         ((path as NSString).resolvingSymlinksInPath as NSString).standardizingPath
     }
 
-    /// Removes system-hidden apps, then keeps one app per bundle identifier
-    /// (or per resolved path when there is no identifier). Order of the
+    /// Keeps one app per bundle identifier (or per resolved path when there is
+    /// no identifier), and one per display name among system-hidden apps. Order of the
     /// first occurrence of each app is preserved.
     ///
     /// Winner order: newer version, then /Applications-style locations over
@@ -45,8 +46,13 @@ public enum AppDedupe {
     public static func dedupe(_ candidates: [AppCandidate]) -> [AppCandidate] {
         var order: [String] = []
         var best: [String: AppCandidate] = [:]
-        for c in candidates where !c.isSystemHidden {
-            let key = c.bundleID.flatMap { $0.isEmpty ? nil : "id:" + $0.lowercased() } ?? "path:" + c.resolvedPath
+        for c in candidates {
+            let key: String
+            if c.isSystemHidden {
+                key = "hidden:" + c.name.lowercased()
+            } else {
+                key = c.bundleID.flatMap { $0.isEmpty ? nil : "id:" + $0.lowercased() } ?? "path:" + c.resolvedPath
+            }
             if let current = best[key] {
                 if isPreferred(c, over: current) { best[key] = c }
             } else {

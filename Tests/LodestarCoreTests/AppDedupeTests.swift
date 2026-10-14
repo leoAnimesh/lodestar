@@ -45,12 +45,17 @@ final class AppDedupeTests: XCTestCase {
         XCTAssertEqual(r.map(\.path), ["/Applications/Foo.app", "/Applications/Bar.app"])
     }
 
-    func testSystemHiddenAppsAreDropped() {
+    func testSystemHiddenSameNameCollapsesToOne() {
         let r = AppDedupe.dedupe([
+            app("Siri", "/System/Applications/Siri AI.app", id: "com.apple.campo", hidden: true),
             app("Siri", "/System/Applications/Siri.app", id: "com.apple.siri.launcher", hidden: true),
-            app("Siri", "/System/Applications/Siri AI.app", id: "com.apple.campo"),
         ])
-        XCTAssertEqual(r.map(\.path), ["/System/Applications/Siri AI.app"])
+        XCTAssertEqual(r.map(\.path), ["/System/Applications/Siri.app"])
+    }
+
+    func testVisibleAppsWithSameNameButDifferentIDsAreKept() {
+        let r = AppDedupe.dedupe([app("Foo", "/Applications/Foo.app", id: "a"), app("Foo", "/Applications/Foo 2.app", id: "b")])
+        XCTAssertEqual(r.count, 2)
     }
 
     func testVersionCompare() {
