@@ -176,6 +176,12 @@ struct ItemIconView: View {
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08)))
         case .text(let text):
             Text(text).font(.system(size: 18))
+        case .swatch(let r, let g, let b):
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color(.sRGB, red: r, green: g, blue: b, opacity: 1))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.18), lineWidth: 0.5))
+                .frame(width: 22, height: 22)
+                .frame(width: 26, height: 26)
         }
     }
 }

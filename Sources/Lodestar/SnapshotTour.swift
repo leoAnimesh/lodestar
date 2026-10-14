@@ -66,6 +66,45 @@ final class SnapshotTour {
             }))
         }
         appendEmojiStates(prefix: "emoji")
+        // Color picker and caffeinate rows. Caffeinate really runs (30 min)
+        // for a few states and is stopped again; the color history shown is
+        // sample data kept in memory, never written to disk.
+        states.append(("launcher-7-pick-color", {
+            app.showPanel(query: "color")
+            return app.launcherWindow
+        }))
+        states.append(("launcher-8-caffeinate", {
+            app.caffeinator.stop()
+            app.showPanel(query: "caff")
+            return app.launcherWindow
+        }))
+        states.append(("launcher-9-decaffeinate-active", {
+            app.caffeinator.start(.thirtyMinutes)
+            app.showPanel(query: "caff")
+            return app.launcherWindow
+        }))
+        states.append(("launcher-10-empty-caffeinated", {
+            app.showPanel(query: "")
+            return app.launcherWindow
+        }))
+        states.append(("menubar-caffeinated", {
+            app.hidePanel()
+            return app.statusItemWindow
+        }))
+        states.append(("stop-caffeinate", {
+            app.caffeinator.stop()
+            return nil
+        }))
+        states.append(("launcher-11-color-history", {
+            var sample = ColorHistory()
+            let now = Date()
+            // Oldest first, so #3A7BFF ends up newest.
+            for (i, hex) in ["#1F6FEB", "#E5484D", "#30A46C", "#F5A524", "#8E4EC6", "#3A7BFF"].enumerated() {
+                if let c = SRGBColor(hex: hex) { sample.add(c, at: now.addingTimeInterval(Double(i - 6) * 3700 + 120)) }
+            }
+            app.showPanel(pushing: ColorHistoryScreen(picker: ColorPicker(storeURL: nil, history: sample)))
+            return app.launcherWindow
+        }))
         // The same views forced to light appearance (config is not touched).
         let previous = NSApp.appearance
         states.append(("light-launcher-empty", {

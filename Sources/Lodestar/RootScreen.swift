@@ -18,6 +18,10 @@ final class RootScreen: ListScreen {
     var onReload: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onShowWelcome: (() -> Void)?
+    /// Pick Color / Color History (nil hides them).
+    var colorPicker: ColorPicker?
+    /// Caffeinate / Decaffeinate (nil hides them).
+    var caffeinator: Caffeinator?
     /// Enable/alias/hotkey settings; disabled commands never appear in search.
     var preferences = CommandPreferences()
 
@@ -33,12 +37,18 @@ final class RootScreen: ListScreen {
 
     func search(_ query: String) -> [LauncherItem] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        let all = allItems()
+        let caffeinated = caffeinator?.isActive ?? false
+        let all = CaffeinateCommands.arrange(allItems(), active: caffeinated)
 
         if trimmed.isEmpty {
             // No query: show most-used items, then a few useful defaults.
             let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             var result = frecency.mostUsed(limit: 8).compactMap { byID[$0] }
+            // While caffeinated, the way out leads the list.
+            if caffeinated, let decaf = byID[CaffeinateCommands.decaffeinateID] {
+                result.removeAll { $0.id == decaf.id }
+                result.insert(decaf, at: 0)
+            }
             for id in ["cmd:clipboard", "cmd:emoji", "cmd:files"] where !result.contains(where: { $0.id == id }) {
                 if let item = byID[id] { result.append(item) }
             }
@@ -60,6 +70,7 @@ final class RootScreen: ListScreen {
         }
         // An exact alias match goes first, even if fuzzy ranking missed it.
         order = preferences.promotingAlias(of: trimmed, in: order, available: Set(byID.keys))
+        order = CaffeinateState.arrange(order, active: caffeinated, decaffeinateID: CaffeinateCommands.decaffeinateID)
         for id in order {
             guard var item = byID[id] else { continue }
             item.matchedIndices = ranked[id] ?? []
@@ -146,7 +157,12 @@ final class RootScreen: ListScreen {
 
     /// Every command, enabled or not (apps excluded).
     func commandItems() -> [LauncherItem] {
-        builtinCommands() + systemCommands() + scriptItems() + extensionItems()
+        builtinCommands() + utilityCommands() + systemCommands() + scriptItems() + extensionItems()
+    }
+
+    /// Color picker and caffeinate commands (see Providers/ColorPicker.swift, CaffeinateCommands.swift).
+    private func utilityCommands() -> [LauncherItem] {
+        (colorPicker.map(ColorPickerCommands.items) ?? []) + (caffeinator.map(CaffeinateCommands.items) ?? [])
     }
 
     /// One row per command for Settings › Extensions.
@@ -164,6 +180,12 @@ final class RootScreen: ListScreen {
             entries.append(CatalogEntry(
                 descriptor: CommandDescriptor(id: item.id, title: item.title, subtitle: item.subtitle, kind: .command, group: "Lodestar", keywords: item.keywords),
                 icon: item.icon.tinted(for: item.id), location: nil, summary: RootScreen.builtinSummaries[item.id] ?? "A built-in Lodestar command."))
+        }
+        for item in utilityCommands() {
+            entries.append(CatalogEntry(
+                descriptor: CommandDescriptor(id: item.id, title: item.title, subtitle: "Utilities", kind: .command, group: "Utilities", keywords: item.keywords),
+                icon: item.icon.tinted(for: item.id), location: nil,
+                summary: ColorPickerCommands.summaries[item.id] ?? CaffeinateCommands.summaries[item.id] ?? "A built-in Lodestar command."))
         }
         for item in systemCommands() {
             entries.append(CatalogEntry(

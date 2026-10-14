@@ -4,7 +4,7 @@ import SwiftUI
 /// gently graded rounded square). This file is the single place that maps
 /// commands to colors: add a rule to `forItem(_:)` when adding a command.
 enum IconTint: String, CaseIterable {
-    case orange, blue, indigo, purple, red, pink, green, teal, slate, yellow, gray
+    case orange, blue, indigo, purple, red, pink, green, teal, slate, yellow, gray, brown
 
     /// Bottom (base) color of the tile.
     var base: Color {
@@ -20,6 +20,7 @@ enum IconTint: String, CaseIterable {
         case .slate: return Color(red: 0.33, green: 0.45, blue: 0.53)
         case .yellow: return Color(red: 0.93, green: 0.66, blue: 0.08)
         case .gray: return Color(red: 0.45, green: 0.46, blue: 0.50)
+        case .brown: return Color(red: 0.62, green: 0.38, blue: 0.16)  // coffee / amber
         }
     }
 
@@ -54,6 +55,13 @@ enum IconTint: String, CaseIterable {
         "cmd:settings": .gray,
         "cmd:welcome": .purple,
         "cmd:quit": .red,
+        "cmd:pick-color": .pink,
+        "cmd:color-history": .pink,
+        "cmd:caffeinate": .brown,
+        "cmd:caffeinate-30m": .brown,
+        "cmd:caffeinate-1h": .brown,
+        "cmd:caffeinate-2h": .brown,
+        "cmd:decaffeinate": .brown,
         "calc": .green,
         "fallback:web": .blue,
     ]
