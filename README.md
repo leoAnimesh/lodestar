@@ -17,6 +17,7 @@ An open-source, keyboard-driven launcher for macOS. Press **⌥Space**, type a f
 | App search | Scans `/Applications`, `/System/Applications`, `~/Applications`, etc. |
 | Fuzzy ranking | DP-based subsequence matcher with word-start/acronym/consecutive bonuses, blended with **frecency** (use count with a 7-day half-life). Matched letters are bolded. |
 | Calculator | Inline results for expressions like `2^10 / 3`, `sqrt(2)*pi`, `5!`, `3 x 4`. Return copies, ⌘Return pastes. |
+| Emoji & symbols | **Search Emoji & Symbols** opens a grid of every Unicode 17.0 emoji (1,900+, newer ones hidden on macOS versions that can't draw them) plus 880 symbols: keyboard (⌘⌥⇧⌃⏎⌫⎋⇥), arrows, math, currency, punctuation & typography, Greek letters, stars & shapes, box drawing. Search by name, CLDR keyword, flag ISO code (`jp`), the character itself or code point (`U+1F680`). Favorites and Recently Used sit on top; a default skin tone applies to people and hand emoji. Strong matches (`rocket`, `thumbs up`) also appear in the main search, below apps and commands. |
 | Clipboard history | Text only, up to 300 entries, stored owner-only (0600) in `~/Library/Application Support/Lodestar/clipboard.json`. Skips items that password managers mark concealed or transient. |
 | Window management | Halves, thirds, two-thirds, maximize, almost maximize, center, next display (Accessibility API), with an optional gap around snapped windows. |
 | System commands | Lock, Sleep, Sleep Displays, Restart, Shut Down, Log Out, Empty Trash, Toggle Dark Mode, Hide All Apps, Quit All Apps, Eject All Disks. Destructive ones ask for confirmation. |
@@ -30,6 +31,8 @@ An open-source, keyboard-driven launcher for macOS. Press **⌥Space**, type a f
 | Key | Action |
 | --- | --- |
 | ↑ / ↓, ⌃P / ⌃N | Move the selection |
+| ← / → | Move the selection in a grid (emoji & symbols) |
+| ⌫ on an empty query | Go back to the previous screen |
 | Return | Primary action |
 | ⌘Return | Secondary action |
 | ⌘K | Show all actions for the selected item |
@@ -86,6 +89,7 @@ Finishing or closing the window records `onboardingCompletedVersion` in UserDefa
   "launcherPosition": "center",
   "showMenuBarIcon": true,
   "windowGap": 8,
+  "emojiSkinTone": "medium",
   "commands": {
     "cmd:files": { "enabled": false },
     "cmd:clipboard": { "alias": "cb" },
@@ -97,6 +101,7 @@ Finishing or closing the window records `onboardingCompletedVersion` in UserDefa
 - `appearance`: `system` (default), `light` or `dark`.
 - `launcherPosition`: `upperThird` (default) or `center`.
 - `windowGap`: points of space around snapped windows, 0–32.
+- `emojiSkinTone`: default skin tone for emoji: `light`, `mediumLight`, `medium`, `mediumDark` or `dark` (missing = default yellow).
 - `commands`: per-command settings keyed by command ID (shown in Settings › Extensions). Only changed values are stored.
 
 The Settings window reads and writes this same file. It rewrites only the keys it manages and leaves any other keys alone. If the file isn't valid JSON, Settings shows an error instead of overwriting it.
@@ -125,6 +130,21 @@ Open **Settings…** from the menu-bar item, press **⌘,** while the launcher i
 - **About.** Version, license and credits.
 
 Command hotkeys that do something directly, such as window layouts and system commands, run without opening the launcher. Commands with UI, such as Clipboard History or extensions, open it.
+
+## Emoji & symbols
+
+Run **Search Emoji & Symbols** (give it an alias or hotkey in Settings › Extensions). Typing filters the grid by name or keyword. Arrow keys move in two dimensions, and the footer shows the selected item's name and category.
+
+- **Return** pastes into the frontmost app. Without Accessibility access it copies instead and says so. **⌘Return** copies.
+- **⌘K** offers Copy Name, Copy Unicode Code Point, Add to / Remove from Favorites, reordering favorites, Clear Recently Used and Change Default Skin Tone….
+- **Esc**, or **⌫** on an empty query, goes back to the main search.
+- Favorites and recents are stored in `~/Library/Application Support/Lodestar/emoji.json`. The skin tone is `emojiSkinTone` in config.json, and it can also be set in Settings › Extensions › Search Emoji & Symbols.
+
+**Data and license.** The data is `Sources/LodestarCore/Resources/emoji.json` (about 230 KB, bundled as a SwiftPM resource). `scripts/generate-emoji-data.py` generates it from Unicode's `emoji-test.txt` and `UnicodeData.txt` (17.0) and the CLDR 48 English annotations (names and keywords). The symbol selection and the keyboard symbol names are Lodestar's own. The Unicode data is © Unicode, Inc. and used under the [Unicode License v3](https://www.unicode.org/license.txt); the full notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), which `bundle.sh` also copies into the app. No emoji artwork is bundled, since glyphs come from the system font. To regenerate:
+
+```bash
+scripts/generate-emoji-data.py            # downloads the Unicode/CLDR files to a temp dir
+```
 
 ## Script commands
 
@@ -229,6 +249,9 @@ Sources/
     ExtensionProtocol.swift manifest + wire messages + line framing
     Config.swift           config file (load + key-preserving save) + paths
     CommandPreferences.swift  enable/alias/hotkey model, conflicts, command catalog search
+    Emoji/                 emoji catalog loading, word-based search/ranking, skin tones,
+                           recents/favorites store, sectioned-grid arrow navigation
+    Resources/emoji.json   generated emoji & symbol data (Unicode License v3)
     AppPreferences.swift   appearance, launcher position, window gap, system-shortcut
                            conflicts, onboarding launch decision/migration
   Lodestar/                the app
@@ -248,11 +271,11 @@ Sources/
     LauncherView.swift     SwiftUI UI
     RootScreen.swift       apps + commands + calculator + fallbacks
     ExtensionHost.swift    registry + per-command child process sessions
-    Providers/             AppIndex, ClipboardHistory, WindowManager,
+    Providers/             AppIndex, ClipboardHistory, EmojiPicker, WindowManager,
                            FileSearch, ScriptCommands
 ```
 
-Everything the user can navigate into is a `ListScreen`: root search, clipboard history, file search, a script argument prompt, an extension session, or the ⌘K action list. The view model keeps a stack of screens. Asynchronous sources such as Spotlight and extensions push results through `ScreenHost.setItems`.
+Everything the user can navigate into is a `ListScreen`: root search, clipboard history, the emoji grid (a screen with `presentation = .grid`), file search, a script argument prompt, an extension session, or the ⌘K action list. The view model keeps a stack of screens. Asynchronous sources such as Spotlight and extensions push results through `ScreenHost.setItems`.
 
 ### Design background
 
@@ -275,4 +298,4 @@ Lodestar deliberately takes a much simpler route. The UI is native SwiftUI, ther
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Bundled Unicode/CLDR emoji data: Unicode License v3, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

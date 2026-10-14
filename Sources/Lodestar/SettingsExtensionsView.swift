@@ -322,6 +322,14 @@ private struct DetailPane: View {
                         }
                     }
 
+                    if d.id == "cmd:emoji" {
+                        field("Default Skin Tone") {
+                            SkinTonePicker(selection: model.emojiSkinTone) { model.setEmojiSkinTone($0) }
+                            Text("Used for people and hand emoji. Also available from ⌘K in the emoji grid.")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                    }
+
                     Divider()
 
                     field("Command ID") {
@@ -354,6 +362,33 @@ private struct DetailPane: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
             content()
+        }
+    }
+}
+
+/// Six hand swatches, one per skin tone.
+struct SkinTonePicker: View {
+    let selection: EmojiSkinTone
+    let onSelect: (EmojiSkinTone) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(EmojiSkinTone.allCases, id: \.self) { tone in
+                let selected = tone == selection
+                Button { onSelect(tone) } label: {
+                    Text(tone.apply(to: "\u{270B}", modifierBases: [0x270B]))
+                        .font(.system(size: 20))
+                        .frame(width: 32, height: 32)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(selected ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.05)))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+                .help(tone.title)
+                .accessibilityLabel("Skin tone: \(tone.title)")
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
         }
     }
 }

@@ -20,10 +20,13 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
     public var windowGap: Int?
     /// Per-command enable/alias/hotkey settings, keyed by command ID.
     public var commands: [String: CommandSettings]?
+    /// Default skin tone for emoji: "light", "mediumLight", "medium",
+    /// "mediumDark" or "dark" (missing = the default yellow).
+    public var emojiSkinTone: String?
 
     public init(hotkey: String? = nil, appDirectories: [String]? = nil, clipboardHistoryLimit: Int? = nil, clipboardHistoryEnabled: Bool? = nil,
                 appearance: String? = nil, launcherPosition: String? = nil, showMenuBarIcon: Bool? = nil, windowGap: Int? = nil,
-                commands: [String: CommandSettings]? = nil) {
+                commands: [String: CommandSettings]? = nil, emojiSkinTone: String? = nil) {
         self.hotkey = hotkey
         self.appDirectories = appDirectories
         self.clipboardHistoryLimit = clipboardHistoryLimit
@@ -33,6 +36,7 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
         self.showMenuBarIcon = showMenuBarIcon
         self.windowGap = windowGap
         self.commands = commands
+        self.emojiSkinTone = emojiSkinTone
     }
 
     public var commandPreferences: CommandPreferences {
@@ -50,7 +54,7 @@ public struct LodestarConfig: Codable, Equatable, Sendable {
 
     /// Keys this type owns in config.json. Any other keys are left untouched on save.
     static let knownKeys = ["hotkey", "appDirectories", "clipboardHistoryLimit", "clipboardHistoryEnabled",
-                            "appearance", "launcherPosition", "showMenuBarIcon", "windowGap", "commands"]
+                            "appearance", "launcherPosition", "showMenuBarIcon", "windowGap", "commands", "emojiSkinTone"]
 
     /// Reads the config at `url`, applies `change`, and writes it back atomically.
     /// Unknown keys are preserved. If the file exists but can't be parsed, nothing

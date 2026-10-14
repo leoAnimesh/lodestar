@@ -8,7 +8,11 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     @Published var query: String = "" {
         didSet { if query != oldValue { refresh() } }
     }
-    @Published private(set) var items: [LauncherItem] = []
+    @Published private(set) var items: [LauncherItem] = [] {
+        didSet { gridSections = LauncherViewModel.sections(of: items) }
+    }
+    /// Consecutive runs of `items` that share a `section` (grid screens).
+    private(set) var gridSections: [GridSection] = []
     @Published var selectedIndex: Int = 0
     @Published private(set) var detail: (title: String, text: String)?
     @Published private(set) var toast: String?
@@ -19,6 +23,8 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     var onHide: (() -> Void)?
 
     private var savedQueries: [String] = []
+    /// The selected item's ID on each screen below the top, restored on pop.
+    private var savedSelections: [String?] = []
     private var toastWork: DispatchWorkItem?
 
     init(root: ListScreen, frecency: FrecencyStore) {
@@ -31,6 +37,23 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     var placeholder: String { currentScreen.placeholder }
     var breadcrumb: String? { stack.count > 1 ? currentScreen.title : nil }
     var selectedItem: LauncherItem? { items.indices.contains(selectedIndex) ? items[selectedIndex] : nil }
+    var presentation: ScreenPresentation { currentScreen.presentation }
+
+    struct GridSection: Identifiable {
+        let title: String
+        let range: Range<Int>
+        var id: String { "\(range.lowerBound):\(title)" }
+    }
+
+    static func sections(of items: [LauncherItem]) -> [GridSection] {
+        var result: [GridSection] = []
+        var start = 0
+        for i in items.indices where i == items.count - 1 || items[i + 1].section != items[i].section {
+            result.append(GridSection(title: items[i].section ?? "", range: start..<(i + 1)))
+            start = i + 1
+        }
+        return result
+    }
 
     // MARK: Lifecycle
 
@@ -53,6 +76,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     func push(_ screen: ListScreen) {
         screen.host = self
         savedQueries.append(query)
+        savedSelections.append(selectedItem?.id)
         stack.append(screen)
         query = ""
         refresh()
@@ -62,14 +86,18 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     func pop() {
         guard stack.count > 1 else { return }
         stack.removeLast().dismissed()
+        let selectedID = savedSelections.popLast() ?? nil
         query = savedQueries.popLast() ?? ""
         refresh()
+        // Come back to the item that was selected (e.g. after ⌘K in a grid).
+        if let selectedID, let index = items.firstIndex(where: { $0.id == selectedID }) { selectedIndex = index }
         focusToken += 1
     }
 
     func popToRoot() {
         while stack.count > 1 { stack.removeLast().dismissed() }
         savedQueries.removeAll()
+        savedSelections.removeAll()
     }
 
     // MARK: Keyboard
@@ -77,6 +105,22 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     func moveSelection(_ delta: Int) {
         guard !items.isEmpty else { return }
         selectedIndex = (selectedIndex + delta + items.count) % items.count
+    }
+
+    /// Arrow keys on a grid screen. Returns false on list screens, where
+    /// left/right belong to the text field.
+    func moveInGrid(_ direction: SectionedGrid.Direction) -> Bool {
+        guard case .grid(let columns) = presentation, detail == nil, !items.isEmpty else { return false }
+        let grid = SectionedGrid(sectionSizes: gridSections.map(\.range.count), columns: columns)
+        selectedIndex = grid.move(from: selectedIndex, direction)
+        return true
+    }
+
+    /// Backspace with an empty query goes back from a pushed screen.
+    func backspaceOnEmptyQuery() -> Bool {
+        guard query.isEmpty, detail == nil, stack.count > 1 else { return false }
+        pop()
+        return true
     }
 
     /// Escape: close detail, then pop, then clear query, then hide.

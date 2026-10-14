@@ -14,6 +14,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Lodestar"
 cp LICENSE "$APP/Contents/Resources/LICENSE"
+cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
+# SwiftPM resource bundle (emoji data). LodestarCore looks for it in
+# Contents/Resources; see EmojiCatalog.bundledDataURL().
+RESOURCES="$(dirname "$BIN")/Lodestar_LodestarCore.bundle"
+if [ ! -f "$RESOURCES/Contents/Resources/emoji.json" ]; then
+  echo "error: $RESOURCES is missing emoji.json" >&2
+  exit 1
+fi
+cp -R "$RESOURCES" "$APP/Contents/Resources/"
 
 # App icon: the art is drawn in SwiftUI (Sources/Lodestar/UI/Brand.swift);
 # the binary renders it to an .iconset, then iconutil packs the .icns.

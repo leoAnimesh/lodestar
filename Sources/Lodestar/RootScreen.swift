@@ -10,6 +10,8 @@ final class RootScreen: ListScreen {
 
     let apps: AppIndex
     var clipboard: ClipboardHistory?
+    /// Emoji data for the "Search Emoji & Symbols" command and inline results.
+    var emoji: EmojiLibrary?
     let scripts: ScriptCommandStore
     let extensions: ExtensionRegistry
     let frecency: FrecencyStore
@@ -37,7 +39,7 @@ final class RootScreen: ListScreen {
             // No query: show most-used items, then a few useful defaults.
             let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             var result = frecency.mostUsed(limit: 8).compactMap { byID[$0] }
-            for id in ["cmd:clipboard", "cmd:files", "wm:Left Half", "wm:Right Half", "wm:Maximize"] where !result.contains(where: { $0.id == id }) {
+            for id in ["cmd:clipboard", "cmd:emoji", "cmd:files", "wm:Left Half", "wm:Right Half", "wm:Maximize"] where !result.contains(where: { $0.id == id }) {
                 if let item = byID[id] { result.append(item) }
             }
             return result.map(RootScreen.withTile)
@@ -65,6 +67,10 @@ final class RootScreen: ListScreen {
             results.append(item)
         }
 
+        // A few emoji whose name is exactly the query ("rocket"), after apps
+        // and commands but before the URL / web fallbacks.
+        results += inlineEmoji(trimmed)
+
         if let url = urlFromQuery(trimmed) {
             results.append(LauncherItem(id: "fallback:url", title: "Open \(url.absoluteString)", subtitle: nil,
                                         icon: .symbol("link"),
@@ -80,6 +86,19 @@ final class RootScreen: ListScreen {
         var copy = item
         copy.icon = item.icon.tinted(for: item.id)
         return copy
+    }
+
+    private func inlineEmoji(_ query: String) -> [LauncherItem] {
+        guard let emoji, preferences.isEnabled("cmd:emoji"), let catalog = emoji.catalog else { return [] }
+        return EmojiSearch.strongMatches(query, in: catalog, limit: 3).map { item in
+            var row = emoji.launcherItem(item, idPrefix: "emoji", section: nil) { [weak self] in
+                guard let self else { return }
+                self.host?.setItems(self.search(query), for: self)
+            }
+            row.subtitle = "Emoji"
+            row.accessory = catalog.category(of: item)?.name
+            return row
+        }
     }
 
     private func urlFromQuery(_ q: String) -> URL? {
@@ -183,6 +202,7 @@ final class RootScreen: ListScreen {
     static let builtinSummaries: [String: String] = [
         "cmd:clipboard": "Browse and search text you've copied. Return pastes into the frontmost app.",
         "cmd:files": "Finds files in your home folder with Spotlight as you type.",
+        "cmd:emoji": "Browse and search every Unicode emoji plus arrows, math, currency, keyboard and other symbols. Return pastes into the frontmost app, ⌘K copies the name or code point and manages favorites. Strong matches (such as “rocket”) also appear in the main search.",
         "cmd:reload": "Re-reads the scripts and extensions folders.",
         "cmd:config": "Opens ~/.config/lodestar in Finder.",
         "cmd:new-script": "Creates a script command from a template and reveals it in Finder.",
@@ -230,6 +250,12 @@ final class RootScreen: ListScreen {
         if let clipboard {
             items.append(command("cmd:clipboard", "Clipboard History", symbol: "doc.on.clipboard", keywords: ["paste", "copy"]) {
                 .push(ClipboardHistoryScreen(history: clipboard))
+            })
+        }
+        if let emoji {
+            items.append(command("cmd:emoji", "Search Emoji & Symbols", symbol: "face.smiling",
+                                 keywords: ["emoji", "symbols", "smiley", "unicode", "character", "glyph", "arrows", "keyboard symbols"]) {
+                .push(EmojiScreen(library: emoji))
             })
         }
         items.append(command("cmd:files", "Search Files", symbol: "doc.text.magnifyingglass", keywords: ["find", "spotlight"]) {

@@ -59,12 +59,13 @@ final class SnapshotTour {
             return nil
         }))
         for (name, query) in [("launcher-1-empty", ""), ("launcher-2-search", "cal"), ("launcher-3-calculator", "2^10 / 4"),
-                              ("launcher-4-commands", "s"), ("launcher-5-alias", "lh")] {
+                              ("launcher-4-commands", "s"), ("launcher-5-alias", "lh"), ("launcher-6-emoji-inline", "rocket")] {
             states.append((name, {
                 app.showPanel(query: query)
                 return app.launcherWindow
             }))
         }
+        appendEmojiStates(prefix: "emoji")
         // The same views forced to light appearance (config is not touched).
         let previous = NSApp.appearance
         states.append(("light-launcher-empty", {
@@ -76,6 +77,7 @@ final class SnapshotTour {
             app.showPanel(query: "s")
             return app.launcherWindow
         }))
+        appendEmojiStates(prefix: "light-emoji")
         states.append(("light-settings-extensions", {
             app.hidePanel()
             app.openSettings(tab: .extensions)
@@ -94,6 +96,23 @@ final class SnapshotTour {
             return nil
         }))
         run(0)
+    }
+
+    /// The emoji grid: browsing, a search, symbols, and the ⌘K actions.
+    private func appendEmojiStates(prefix: String) {
+        guard let app else { return }
+        let steps: [(String, String, Int?, Bool)] = [
+            ("1-grid", "", 3, false),
+            ("2-search", "heart", nil, false),
+            ("3-symbols", "arrow", 2, false),
+            ("4-actions", "", 3, true),
+        ]
+        for (suffix, query, select, actions) in steps {
+            states.append(("\(prefix)-\(suffix)", {
+                app.showCommand("cmd:emoji", query: query, select: select, actions: actions)
+                return app.launcherWindow
+            }))
+        }
     }
 
     private func run(_ index: Int) {

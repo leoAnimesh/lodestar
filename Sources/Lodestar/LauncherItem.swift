@@ -58,6 +58,17 @@ struct LauncherItem: Identifiable {
     var matchedIndices: [Int] = []
     /// Whether launching this item counts toward frecency ranking.
     var tracksUsage = true
+    /// Grid screens: the section header this item appears under. Items of a
+    /// section must be consecutive.
+    var section: String? = nil
+}
+
+/// How the launcher draws a screen's items.
+enum ScreenPresentation: Equatable {
+    case list
+    /// Large glyph cells, grouped by `LauncherItem.section`. Arrow keys move
+    /// in two dimensions and the footer shows the selected item's title.
+    case grid(columns: Int)
 }
 
 /// One level of the launcher's navigation stack.
@@ -71,10 +82,12 @@ protocol ListScreen: AnyObject {
     func search(_ query: String) -> [LauncherItem]
     /// Called when the screen is popped or the launcher hides.
     func dismissed()
+    var presentation: ScreenPresentation { get }
 }
 
 extension ListScreen {
     func dismissed() {}
+    var presentation: ScreenPresentation { .list }
 }
 
 protocol ScreenHost: AnyObject {

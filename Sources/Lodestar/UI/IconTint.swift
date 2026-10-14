@@ -48,6 +48,7 @@ enum IconTint: String, CaseIterable {
     private static let exact: [String: IconTint] = [
         "cmd:clipboard": .orange,
         "cmd:files": .blue,
+        "cmd:emoji": .yellow,
         "cmd:reload": .teal,
         "cmd:config": .slate,
         "cmd:new-script": .slate,

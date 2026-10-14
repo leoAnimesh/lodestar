@@ -102,6 +102,7 @@ final class SettingsModel: ObservableObject {
     var launcherPosition: LauncherPosition { LauncherPosition(configValue: config.launcherPosition) }
     var showMenuBarIcon: Bool { config.showMenuBarIcon ?? true }
     var windowGap: Int { WindowGap.clamp(config.windowGap) }
+    var emojiSkinTone: EmojiSkinTone { EmojiSkinTone(configValue: config.emojiSkinTone) }
     var hotkeyError: String? { capture.errorMessage(for: SettingsModel.launcherTarget) }
     var hotkeyWarning: String? { HotkeyConflicts.systemConflict(for: hotkey) }
     var configPath: String { (configURL.path as NSString).abbreviatingWithTildeInPath }
@@ -161,6 +162,7 @@ final class SettingsModel: ObservableObject {
     func setAppearance(_ mode: AppearanceMode) { save { $0.appearance = mode.configValue } }
     func setLauncherPosition(_ position: LauncherPosition) { save { $0.launcherPosition = position.configValue } }
     func setShowMenuBarIcon(_ show: Bool) { save { $0.showMenuBarIcon = show ? nil : false } }
+    func setEmojiSkinTone(_ tone: EmojiSkinTone) { save { $0.emojiSkinTone = tone.configValue } }
     func setWindowGap(_ gap: Int) { save { $0.windowGap = gap == 0 ? nil : WindowGap.clamp(gap) } }
 
     func clearClipboardHistory() {

@@ -12,6 +12,8 @@ struct LauncherView: View {
                 DetailView(title: detail.title, text: detail.text)
             } else if model.items.isEmpty {
                 emptyState
+            } else if case .grid(let columns) = model.presentation {
+                GlyphGrid(model: model, columns: columns)
             } else {
                 resultsList
             }
@@ -83,6 +85,15 @@ struct LauncherView: View {
                 Label(toast, systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .lineLimit(1)
+            } else if case .grid = model.presentation, model.detail == nil, let item = model.selectedItem {
+                // Grid cells have no room for names: show the selection's here.
+                HStack(spacing: 6) {
+                    Text(item.title).fontWeight(.medium).lineLimit(1)
+                    if let subtitle = item.subtitle {
+                        Text(subtitle).foregroundStyle(.tertiary).lineLimit(1)
+                    }
+                }
+                .layoutPriority(-1)
             } else {
                 Text("Lodestar").foregroundStyle(.tertiary)
             }
@@ -184,5 +195,95 @@ struct DetailView: View {
             }
             .padding(18)
         }
+    }
+}
+
+/// The grid used by glyph screens (emoji & symbols): big cells under
+/// pinned section headers, with the selection kept in view.
+struct GlyphGrid: View {
+    @ObservedObject var model: LauncherViewModel
+    let columns: Int
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Headers scroll with the cells (pinned headers covered the first row).
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: columns), spacing: 4) {
+                    ForEach(model.gridSections) { section in
+                        Section {
+                            ForEach(section.range, id: \.self) { index in
+                                cell(index)
+                            }
+                        } header: {
+                            header(section.title).id(section.id)
+                        }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+            }
+            .onChange(of: model.selectedIndex) { newValue in
+                guard model.items.indices.contains(newValue) else { return }
+                // On a section's first row, bring its header into view too.
+                if let section = model.gridSections.first(where: { $0.range.contains(newValue) }),
+                   newValue - section.range.lowerBound < columns {
+                    proxy.scrollTo(section.id)
+                }
+                proxy.scrollTo(model.items[newValue].id)
+            }
+            .onChange(of: model.items.first?.id) { _ in
+                if let first = model.gridSections.first { proxy.scrollTo(first.id, anchor: .top) }
+            }
+        }
+    }
+
+    private func header(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 6)
+            .padding(.top, 10)
+            .padding(.bottom, 2)
+    }
+
+    @ViewBuilder
+    private func cell(_ index: Int) -> some View {
+        let item = model.items[index]
+        let selected = index == model.selectedIndex
+        GlyphCell(icon: item.icon, selected: selected)
+            .id(item.id)
+            .help(item.title)
+            .accessibilityElement()
+            .accessibilityLabel(item.title)
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            .onTapGesture {
+                model.selectedIndex = index
+                model.runSelected()
+            }
+    }
+}
+
+struct GlyphCell: View {
+    let icon: ItemIcon
+    let selected: Bool
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        Group {
+            if case .text(let glyph) = icon {
+                Text(glyph)
+                    .font(.system(size: 34))
+                    .minimumScaleFactor(0.4)
+                    .lineLimit(1)
+            } else {
+                ItemIconView(icon: icon)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 64)
+        .background(shape.fill(selected ? Color.accentColor.opacity(0.26) : Color.primary.opacity(0.045)))
+        .overlay(shape.strokeBorder(selected ? Color.accentColor.opacity(0.9) : Color.clear, lineWidth: 2))
+        .contentShape(shape)
     }
 }

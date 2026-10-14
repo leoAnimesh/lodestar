@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var keyMonitor: Any?
     /// Loaded even when recording is off, so Settings can count and clear it.
     private var clipboard: ClipboardHistory!
+    private var emoji: EmojiLibrary!
     private var config = LodestarConfig()
     private var hotkeySpec = HotkeySpec.default
     private var launcherPosition = LauncherPosition.upperThird
@@ -35,7 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         scripts.reload()
         extensions.reload()
 
+        emoji = EmojiLibrary(usageURL: LodestarPaths.supportDirectory.appendingPathComponent("emoji.json"))
+        emoji.preload()
+        emoji.onChangeSkinTone = { [weak self] tone in self?.saveEmojiSkinTone(tone) }
+
         root = RootScreen(apps: apps, clipboard: nil, scripts: scripts, extensions: extensions, frecency: frecency)
+        root.emoji = emoji
         root.onReload = {
             scripts.reload()
             extensions.reload()
@@ -130,9 +136,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusItem = nil
         }
 
+        emoji.skinTone = EmojiSkinTone(configValue: newConfig.emojiSkinTone)
         root.preferences = newConfig.commandPreferences
         syncCommandHotKeys()
         if panel.isVisible { model.refresh() }
+    }
+
+    /// The launcher's "Change Default Skin Tone…" action.
+    private func saveEmojiSkinTone(_ tone: EmojiSkinTone) {
+        do {
+            config = try LodestarConfig.update(at: LodestarPaths.configFile) { $0.emojiSkinTone = tone.configValue }
+            settings?.model.refresh()
+        } catch {
+            model.showToast(error.localizedDescription)
+        }
     }
 
     // MARK: Hotkeys
@@ -232,6 +249,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     var launcherWindow: NSWindow { panel }
 
+    /// For the snapshot tour: open a command's screen, type a query, and
+    /// optionally select an item and open its ⌘K actions.
+    func showCommand(_ id: String, query: String = "", select glyphIndex: Int? = nil, actions: Bool = false) {
+        showPanel()
+        // Run the command's action directly: runCommand would record usage,
+        // and the tour must not change the user's frecency ranking.
+        if let item = root.allItems().first(where: { $0.id == id }), let action = item.actions.first,
+           case .push(let screen) = action.perform() {
+            model.push(screen)
+        }
+        model.query = query
+        if let glyphIndex { model.selectedIndex = min(glyphIndex, max(model.items.count - 1, 0)) }
+        if actions { model.showActionPanel() }
+    }
+
     func windowDidResignKey(_ notification: Notification) {
         guard (notification.object as? NSWindow) === panel else { return }
         // Clicking elsewhere dismisses the launcher, like a popover.
@@ -264,8 +296,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard event.window === self.panel else { return event }
             let command = event.modifierFlags.contains(.command)
             switch event.keyCode {
-            case 125: self.model.moveSelection(1); return nil                          // ↓
-            case 126: self.model.moveSelection(-1); return nil                         // ↑
+            case 123 where self.model.moveInGrid(.left): return nil                    // ← (grid screens)
+            case 124 where self.model.moveInGrid(.right): return nil                   // →
+            case 125: if !self.model.moveInGrid(.down) { self.model.moveSelection(1) }; return nil   // ↓
+            case 126: if !self.model.moveInGrid(.up) { self.model.moveSelection(-1) }; return nil    // ↑
+            case 51 where !command && self.model.backspaceOnEmptyQuery(): return nil  // ⌫ on empty query: back
             case 36, 76: self.model.runSelected(actionIndex: command ? 1 : 0); return nil  // Return / Enter
             case 53: self.model.escape(); return nil                                   // Esc
             case 40 where command: self.model.showActionPanel(); return nil            // ⌘K
