@@ -1,4 +1,5 @@
 import AppKit
+import LodestarCore
 
 /// Finds installed applications by scanning the standard application
 /// folders. (A Spotlight `kMDItemContentType == com.apple.application-bundle`
@@ -41,19 +42,19 @@ final class AppIndex {
 
     static func scan(_ directories: [String]) -> [App] {
         let fm = FileManager.default
-        var seen = Set<String>()
-        var result: [App] = []
+        var candidates: [AppCandidate] = []
         func visit(_ dir: String, depth: Int) {
             guard let entries = try? fm.contentsOfDirectory(atPath: dir) else { return }
             for entry in entries {
                 let path = (dir as NSString).appendingPathComponent(entry)
                 if entry.hasSuffix(".app") {
-                    let resolved = (path as NSString).resolvingSymlinksInPath
-                    guard seen.insert(resolved).inserted else { continue }
                     let bundle = Bundle(path: path)
                     let name = (bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
                         ?? (entry as NSString).deletingPathExtension
-                    result.append(App(name: name, path: path, bundleID: bundle?.bundleIdentifier))
+                    candidates.append(AppCandidate(
+                        name: name, path: path, bundleID: bundle?.bundleIdentifier,
+                        version: bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                        isSystemHidden: (bundle?.object(forInfoDictionaryKey: "LSDefaultSystemHidden") as? Bool) ?? false))
                 } else if depth < 2 {
                     var isDir: ObjCBool = false
                     // Descend into plain folders like /Applications/Adobe Foo/
@@ -64,6 +65,7 @@ final class AppIndex {
             }
         }
         for dir in directories { visit(dir, depth: 0) }
-        return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return AppDedupe.dedupe(candidates).map { App(name: $0.name, path: $0.path, bundleID: $0.bundleID) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
