@@ -21,6 +21,21 @@ struct GuideStar: Shape {
     }
 }
 
+/// The outline guiding star used as the search-bar glyph (in place of a
+/// magnifying glass). Takes the surrounding foreground style.
+struct LodestarStarIcon: View {
+    var size: CGFloat = 20
+    var lineWidth: CGFloat = 1.7
+
+    var body: some View {
+        GuideStar(waist: 0.3)
+            .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+            .padding(lineWidth / 2)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
 /// Lodestar's app mark: a night-sky tile with a bright guiding star.
 /// Drawn in code (no image assets) and also rendered into the .icns by
 /// `Lodestar --render-icon` during bundling.

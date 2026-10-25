@@ -27,14 +27,13 @@ struct LauncherView: View {
 
     private var searchBar: some View {
         HStack(spacing: 10) {
+            LodestarStarIcon(size: 21).foregroundStyle(.secondary)
             if let crumb = model.breadcrumb {
                 Text(crumb)
                     .font(.system(size: 12, weight: .medium))
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08)))
                     .lineLimit(1)
-            } else {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 18))
             }
             TextField(model.placeholder, text: $model.query)
                 .textFieldStyle(.plain)

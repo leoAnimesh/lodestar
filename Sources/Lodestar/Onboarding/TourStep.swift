@@ -136,13 +136,12 @@ struct TourStep: View {
     private var miniLauncher: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
+                LodestarStarIcon(size: 16, lineWidth: 1.4).foregroundStyle(.secondary)
                 if feature == .clipboard {
                     Text("Clipboard History")
                         .font(.system(size: 11, weight: .medium))
                         .padding(.horizontal, 6).padding(.vertical, 3)
                         .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.08)))
-                } else {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 }
                 TextField(feature == .clipboard ? "Search clipboard…" : "Search apps and commands…", text: $query)
                     .textFieldStyle(.plain)
