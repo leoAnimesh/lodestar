@@ -188,18 +188,33 @@ final class AppPreferencesTests: XCTestCase {
     }
 
     func testOnboardingLaunchDecision() {
-        // Fresh install: show it.
-        XCTAssertEqual(Onboarding.launchDecision(completedVersion: nil, legacyDidShowFirstLaunch: false),
-                       .init(showOnboarding: true, storeCompletedVersion: nil, removeLegacyKey: false))
-        // Upgraded from a build that showed the launcher on first run: migrate silently.
-        XCTAssertEqual(Onboarding.launchDecision(completedVersion: nil, legacyDidShowFirstLaunch: true),
-                       .init(showOnboarding: false, storeCompletedVersion: 1, removeLegacyKey: true))
-        // Already completed.
-        XCTAssertEqual(Onboarding.launchDecision(completedVersion: 1, legacyDidShowFirstLaunch: false).showOnboarding, false)
-        // A completed version wins over the legacy flag, which is still cleaned up.
-        XCTAssertEqual(Onboarding.launchDecision(completedVersion: 1, legacyDidShowFirstLaunch: true),
-                       .init(showOnboarding: false, storeCompletedVersion: nil, removeLegacyKey: true))
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func decide(_ completed: Int? = nil, legacy: Bool = false, ax: Bool = false,
+                    last: Date? = nil, force: Bool = false) -> Onboarding.Decision {
+            Onboarding.launchDecision(completedVersion: completed, legacyDidShowFirstLaunch: legacy,
+                                      accessibilityGranted: ax, lastReminder: last, now: now, forceShow: force)
+        }
+        let v = Onboarding.currentVersion
+        // Fresh install: the full flow, whether or not Accessibility happens to be granted.
+        XCTAssertEqual(decide(), .init(action: .welcome, storeCompletedVersion: nil, removeLegacyKey: false, recordReminder: false))
+        XCTAssertEqual(decide(ax: true).action, .welcome)
+        // Legacy flag only, Accessibility already granted: set up, migrate silently.
+        XCTAssertEqual(decide(legacy: true, ax: true),
+                       .init(action: .none, storeCompletedVersion: v, removeLegacyKey: true, recordReminder: false))
+        // Legacy flag only, Accessibility missing: never saw onboarding, so show it at permissions.
+        XCTAssertEqual(decide(legacy: true),
+                       .init(action: .permissions, storeCompletedVersion: nil, removeLegacyKey: false, recordReminder: false))
+        // Completed with everything granted: nothing to do; a stale legacy flag is cleaned up.
+        XCTAssertEqual(decide(v, ax: true).action, .none)
+        XCTAssertTrue(decide(v, legacy: true, ax: true).removeLegacyKey)
+        // Completed an older flow: shown again even with permissions granted.
+        XCTAssertEqual(decide(v - 1, ax: true).action, .welcome)
+        // Completed but Accessibility missing: remind once, then not again for a day.
+        XCTAssertEqual(decide(v), .init(action: .permissions, storeCompletedVersion: nil, removeLegacyKey: false, recordReminder: true))
+        XCTAssertEqual(decide(v, last: now.addingTimeInterval(-3600)).action, .none)
+        XCTAssertEqual(decide(v, last: now.addingTimeInterval(-Onboarding.reminderInterval - 1)).action, .permissions)
+        XCTAssertEqual(decide(v, last: now.addingTimeInterval(3600)).action, .permissions)  // clock moved back
         // Explicit request (--onboarding or "Show Welcome…").
-        XCTAssertTrue(Onboarding.launchDecision(completedVersion: 1, legacyDidShowFirstLaunch: false, forceShow: true).showOnboarding)
+        XCTAssertEqual(decide(v, ax: true, force: true).action, .welcome)
     }
 }

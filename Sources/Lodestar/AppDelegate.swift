@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import LodestarCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -90,14 +91,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // First run shows the welcome window (it replaces the old "show the
         // launcher on first launch"); --show still opens the launcher.
         let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: Onboarding.untrustedCompletedVersionKey)  // v0.1.1's unreliable flag
         let decision = Onboarding.launchDecision(
             completedVersion: defaults.object(forKey: Onboarding.completedVersionKey) as? Int,
             legacyDidShowFirstLaunch: defaults.bool(forKey: Onboarding.legacyFirstLaunchKey),
+            accessibilityGranted: AXIsProcessTrusted(),
+            lastReminder: defaults.object(forKey: Onboarding.lastPermissionReminderKey) as? Date,
             forceShow: args.contains("--onboarding"))
         if let v = decision.storeCompletedVersion { defaults.set(v, forKey: Onboarding.completedVersionKey) }
         if decision.removeLegacyKey { defaults.removeObject(forKey: Onboarding.legacyFirstLaunchKey) }
+        if decision.recordReminder { defaults.set(Date(), forKey: Onboarding.lastPermissionReminderKey) }
         if decision.showOnboarding {
-            showOnboarding()
+            // One run-loop turn later, so the accessory app has finished
+            // launching and can actually take focus and come to the front.
+            let step: OnboardingStep = decision.action == .permissions ? .permissions : .welcome
+            DispatchQueue.main.async { [weak self] in self?.showOnboarding(step: step) }
         } else if args.contains("--show") {
             showPanel()
         }
@@ -562,9 +570,11 @@ extension AppDelegate: SettingsHost {
 
     func showLauncher() { showPanel() }
 
-    func showOnboarding() {
+    func showOnboarding() { showOnboarding(step: .welcome) }
+
+    func showOnboarding(step: OnboardingStep) {
         hidePanel()
-        onboardingWindowController.show()
+        onboardingWindowController.show(step: step)
     }
 
     func checkForUpdates() {
