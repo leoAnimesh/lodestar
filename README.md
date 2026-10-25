@@ -4,7 +4,8 @@
 
 <p align="center">
   <strong>Free, open-source launcher for Mac — a fast Spotlight, Alfred and Raycast alternative.</strong><br>
-  Open any app, search your clipboard history, paste emoji and pick colors without leaving the keyboard.
+  Open any app, search your clipboard history, paste emoji and pick colors without leaving the keyboard.<br>
+  <a href="https://leoanimesh.github.io/lodestar/"><strong>leoanimesh.github.io/lodestar</strong></a>
 </p>
 
 <p align="center">
@@ -42,16 +43,9 @@ analytics, no tracking.
 2. Open it and drag **Lodestar** into **Applications**.
 3. Open Lodestar. It needs macOS 13 or later and runs on Apple silicon and Intel Macs.
 
-**The first time you open it,** macOS may say it can't check Lodestar for malicious software. That's
-because Lodestar isn't notarized by Apple yet (that needs a paid developer account), not because
-something is wrong. To open it anyway:
-
-- **macOS 15 or later:** try to open Lodestar once, then go to **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
-- **macOS 13–14:** right-click (or Control-click) Lodestar in Applications, choose **Open**, then click **Open**.
-- **Or, in Terminal:** `xattr -dr com.apple.quarantine /Applications/Lodestar.app`
-
-You only need to do this once. Each release also has a `SHA256SUMS.txt` if you want to check your
-download: `shasum -a 256 -c SHA256SUMS.txt`.
+Releases since v0.1.1 are signed with a Developer ID and notarized by Apple, so macOS opens them
+like any other app. Each release also has a `SHA256SUMS.txt` if you want to check your download:
+`shasum -a 256 -c SHA256SUMS.txt`.
 
 ### Homebrew
 
@@ -71,7 +65,10 @@ cd lodestar
 open build/Lodestar.app
 ```
 
-More in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+A local build is ad-hoc signed, not notarized. It opens fine on the Mac that built it, but its signature
+changes with every rebuild, so you may need to turn Accessibility off and on again after rebuilding.
+If you copy a local build to another Mac, macOS will ask you to approve it (right-click › **Open**, or
+**Open Anyway** in System Settings › Privacy & Security). More in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Getting started
 
@@ -106,9 +103,10 @@ against the release's published checksum, replaces itself, and reopens. If anyth
 nothing is changed. The check sends only the app's version in its `User-Agent`; nothing about you or
 your files.
 
-Because releases aren't notarized yet, macOS may ask you to **turn Accessibility back on** after an
-update: open System Settings › Privacy & Security › Accessibility, remove Lodestar with **−**, and add it
-again (or toggle it off and on).
+Notarized releases are all signed with the same Developer ID, so permissions such as Accessibility carry
+over between updates. Coming from v0.1.0 (which was ad-hoc signed), macOS may ask once to **turn
+Accessibility back on**: open System Settings › Privacy & Security › Accessibility, remove Lodestar with
+**−**, and add it again.
 
 ## Privacy
 
