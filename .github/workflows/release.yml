@@ -1,0 +1,246 @@
+name: Release
+
+# Pushing a tag vX.Y.Z (scripts/release.sh does it) builds, tests, packages and
+# publishes a GitHub release with Lodestar-X.Y.Z.zip, Lodestar-X.Y.Z.dmg and
+# SHA256SUMS.txt. The in-app updater reads that release. A tag with a suffix
+# (v1.2.0-beta.1) is published as a pre-release.
+#
+# Signing: with the six Apple secrets below set, the app and DMG are signed
+# with a Developer ID and notarized. Without them, the release is ad-hoc signed
+# and the README explains the first-launch Gatekeeper step. See docs/RELEASING.md.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build and publish, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0 # build number = commit count; release notes need tags
+
+      - name: Read version
+        id: version
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG doesn't match the VERSION file ($version). Use scripts/release.sh."
+            exit 1
+          fi
+          case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Toolchain
+        run: swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+
+      # Optional Developer ID signing: all six secrets, or none (ad hoc).
+      - name: Check signing secrets
+        id: signing
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          missing=""; present=0
+          for name in APPLE_TEAM_ID APPLE_API_KEY_ID APPLE_API_ISSUER_ID APPLE_API_KEY_P8 DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD; do
+            if [ -n "${!name}" ]; then present=$((present + 1)); else missing="$missing $name"; fi
+          done
+          if [ "$present" = 0 ]; then
+            echo "::notice::No signing secrets: this release is ad-hoc signed (not notarized)."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          elif [ -n "$missing" ]; then
+            echo "::error::Some signing secrets are set but these are missing:$missing. Set all six or none."
+            exit 1
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import Developer ID certificate
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/lodestar-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -f pkcs12 \
+            -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$keychain" \
+            | sed -n "s/.*\"\(Developer ID Application: .* ($APPLE_TEAM_ID)\)\"$/\1/p" | head -n 1)"
+          if [ -z "$identity" ]; then
+            echo "::error::DEVELOPER_ID_P12 holds no Developer ID Application identity for team $APPLE_TEAM_ID"
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: Build universal app and package
+        env:
+          ARCH_FLAGS: --arch arm64 --arch x86_64
+        run: scripts/package-release.sh
+
+      # notarytool exits 0 for a rejected submission too, so the status is read
+      # from its JSON. The app is notarized and stapled first, then the zip and
+      # DMG are rebuilt around the stapled app, and the DMG is notarized and
+      # stapled too.
+      - name: Notarize and staple
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$key"
+          chmod 600 "$key"
+          auth=(--key "$key" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID")
+          notarize() {
+            result="$RUNNER_TEMP/notarize-$(basename "$1").json"
+            xcrun notarytool submit "$1" "${auth[@]}" --wait --timeout 1h --output-format json | tee "$result"
+            status="$(plutil -extract status raw -o - "$result" 2>/dev/null || true)"
+            if [ "$status" != "Accepted" ]; then
+              echo "::error::notarization of $(basename "$1") ended with status '${status:-unknown}'"
+              id="$(plutil -extract id raw -o - "$result" 2>/dev/null || true)"
+              [ -z "$id" ] || xcrun notarytool log "$id" "${auth[@]}" || true
+              exit 1
+            fi
+          }
+          staple() {
+            for attempt in 1 2 3 4 5; do
+              xcrun stapler staple "$1" && return 0
+              [ "$attempt" = 5 ] && exit 1
+              sleep $((attempt * 20))
+            done
+          }
+          notarize "build/release/Lodestar-$VERSION.zip"
+          staple build/Lodestar.app
+          scripts/package-release.sh --skip-build
+          notarize "build/release/Lodestar-$VERSION.dmg"
+          staple "build/release/Lodestar-$VERSION.dmg"
+          scripts/write-checksums.sh "$VERSION"
+          rm -f "$key"
+
+      - name: Check assets
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SIGNED: ${{ steps.signing.outputs.enabled }}
+        run: |
+          if [ "$SIGNED" = true ]; then
+            scripts/check-release-assets.sh "$VERSION" --universal --team "$APPLE_TEAM_ID"
+          else
+            scripts/check-release-assets.sh "$VERSION" --universal
+          fi
+
+      - name: Write release notes header
+        env:
+          SIGNED: ${{ steps.signing.outputs.enabled }}
+        run: scripts/release-notes.sh "$VERSION" "$SIGNED" > "$RUNNER_TEMP/notes.md"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          flags=()
+          [ "$PRERELEASE" = true ] && flags+=(--prerelease)
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "::notice::release v$VERSION exists; replacing its assets"
+            gh release upload "v$VERSION" build/release/* --clobber
+          else
+            gh release create "v$VERSION" build/release/* \
+              --title "Lodestar $VERSION" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              --generate-notes \
+              --verify-tag "${flags[@]}"
+          fi
+
+      - name: Remove signing keychain
+        if: always()
+        run: |
+          if [ -n "${SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$SIGNING_KEYCHAIN" || true; fi
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/developer-id.p12"
+
+  # Points Casks/lodestar.rb (this repository is the tap) at the new release
+  # through a pull request, so nothing is pushed to main by CI. Needs
+  # Settings > Actions > General > "Allow GitHub Actions to create and approve
+  # pull requests". If it fails, the release is already out: run
+  # scripts/bump-homebrew.sh X.Y.Z SHA256SUMS.txt locally instead.
+  homebrew:
+    name: Homebrew cask bump PR
+    needs: release
+    if: needs.release.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Bump cask
+        run: |
+          gh release download "v$VERSION" --pattern SHA256SUMS.txt --dir "$RUNNER_TEMP"
+          scripts/bump-homebrew.sh "$VERSION" "$RUNNER_TEMP/SHA256SUMS.txt"
+          ruby -c Casks/lodestar.rb
+          git diff
+      - name: Open pull request
+        run: |
+          if git diff --quiet; then
+            echo "::notice::the cask already points at $VERSION"
+            exit 0
+          fi
+          branch="homebrew/v$VERSION"
+          title="chore(homebrew): bump cask to $VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -q -am "$title"
+          git push --force origin "$branch"
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "::notice::a pull request for $branch is already open"
+            exit 0
+          fi
+          gh pr create --base main --head "$branch" --title "$title" \
+            --body "Points \`Casks/lodestar.rb\` at [v$VERSION](https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION) with the DMG checksum from that release's \`SHA256SUMS.txt\`."

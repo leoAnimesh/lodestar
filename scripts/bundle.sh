@@ -2,13 +2,29 @@
 # Builds a release binary and wraps it in a minimal .app bundle so macOS can
 # attribute permissions (Accessibility, Automation) to "Lodestar" rather than
 # to your terminal. Output: build/Lodestar.app
+#
+# Environment (all optional):
+#   VERSION        marketing version; defaults to the VERSION file (single source of truth)
+#   BUILD_NUMBER   CFBundleVersion; defaults to the commit count, so it only grows along main
+#   ARCH_FLAGS     extra swift build flags, e.g. "--arch arm64 --arch x86_64" for a universal app
+#   SIGN_IDENTITY  "-" (default) signs ad hoc; a "Developer ID Application: … (TEAMID)" identity
+#                  signs with the hardened runtime and a secure timestamp, ready for notarization
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-swift build -c release
-BIN="$(swift build -c release --show-bin-path)/Lodestar"
+VERSION="${VERSION:-$(tr -d '[:space:]' < VERSION)}"
+BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+# shellcheck disable=SC2086  # ARCH_FLAGS is a list of flags
+read -r -a ARCH <<< "${ARCH_FLAGS:-}"
+if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+  echo "error: VERSION must look like 1.2.3 or 1.2.3-beta.1, got '$VERSION'" >&2
+  exit 1
+fi
+
+swift build -c release ${ARCH[@]+"${ARCH[@]}"}
+BIN="$(swift build -c release ${ARCH[@]+"${ARCH[@]}"} --show-bin-path)/Lodestar"
 APP="build/Lodestar.app"
-VERSION="${VERSION:-0.1.0}"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -47,7 +63,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   ${ICON_KEY}
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>${VERSION}</string>
+  <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSAppleEventsUsageDescription</key><string>Lodestar uses Apple Events for system commands such as Empty Trash, Sleep and Toggle Dark Mode.</string>
@@ -56,7 +72,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature (no developer account needed). Re-granting Accessibility
-# may be required after each rebuild because the signature changes.
-codesign --force --sign - "$APP"
-echo "Built $APP"
+# Ad-hoc signature by default (no developer account needed). Re-granting
+# Accessibility may be required after each rebuild because the signature
+# changes. The bundle has no nested code, so signing it signs the executable.
+if [ "$SIGN_IDENTITY" = "-" ]; then
+  codesign --force --sign - "$APP"
+else
+  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+fi
+codesign --verify --strict --verbose=1 "$APP"
+echo "Built $APP ($VERSION, build $BUILD_NUMBER)"

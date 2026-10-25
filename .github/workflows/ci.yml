@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build and test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # bundle.sh uses the commit count as the build number
+      - name: Toolchain
+        run: swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: Test release scripts
+        run: bash scripts/tests/test-bump-homebrew.sh
+      # What the release workflow does, minus signing, notarization and
+      # publishing: a universal, ad-hoc signed zip + dmg + checksums, checked.
+      - name: Package (dry run)
+        env:
+          ARCH_FLAGS: --arch arm64 --arch x86_64
+        run: scripts/package-release.sh
+      - name: Check release assets
+        run: scripts/check-release-assets.sh "$(tr -d '[:space:]' < VERSION)" --universal
+      - name: Check cask syntax
+        run: ruby -c Casks/lodestar.rb
