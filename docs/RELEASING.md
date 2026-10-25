@@ -77,3 +77,9 @@ install a signed update (that's the upgrade path).
   tag; it replaces the assets of the existing release.
 - **Bad release published:** mark it as a pre-release or draft on GitHub (the updater ignores both
   unless pre-releases are enabled) and ship a fixed patch version.
+
+## Website
+
+The landing page in `site/` deploys to GitHub Pages on its own (`.github/workflows/pages.yml`); releases
+don't need to touch it, because its Download button looks up the newest `Lodestar-<version>.dmg` from
+the GitHub API. To move it to a custom domain, see [CUSTOM-DOMAIN.md](CUSTOM-DOMAIN.md).
