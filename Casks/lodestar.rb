@@ -11,7 +11,7 @@
 # a placeholder and the cask can't be installed.
 cask "lodestar" do
   version "0.1.0"
-  sha256 :no_check
+  sha256 "1013b1169635f2d0bfd1f73d769827ac90249d8ef101a6b1225534785acf1272"
 
   url "https://github.com/leoAnimesh/lodestar/releases/download/v#{version}/Lodestar-#{version}.dmg"
   name "Lodestar"
