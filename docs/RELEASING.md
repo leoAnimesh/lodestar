@@ -60,11 +60,9 @@ To ship Developer ID-signed, notarized releases, add these repository secrets (a
 | `APPLE_API_KEY_P8` | Contents of the `AuthKey_XXXX.p8` file |
 
 With them set, the workflow signs with the hardened runtime, notarizes and staples the app and the DMG,
-and checks Gatekeeper accepts them. Once you're shipping notarized builds:
-
-- remove the `postflight` quarantine block from `Casks/lodestar.rb`,
-- drop the first-launch note from the README and `scripts/release-notes.sh` (it's printed only for
-  unsigned builds already).
+and checks Gatekeeper accepts them. Releases have been notarized since v0.1.1, so the cask no
+longer strips the quarantine flag, and `scripts/release-notes.sh` prints the first-launch note only
+for an unsigned build.
 
 A Developer ID-signed Lodestar only accepts updates signed by the same team; an ad-hoc copy can
 install a signed update (that's the upgrade path).
