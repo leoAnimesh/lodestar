@@ -49,7 +49,7 @@ final class RootScreen: ListScreen {
                 result.removeAll { $0.id == decaf.id }
                 result.insert(decaf, at: 0)
             }
-            for id in ["cmd:clipboard", "cmd:emoji", "cmd:files"] where !result.contains(where: { $0.id == id }) {
+            for id in ["cmd:clipboard", "cmd:emoji", "cmd:files", ColorPickerCommands.pickID, ColorPickerCommands.historyID, CaffeinateDuration.indefinitely.commandID] where !result.contains(where: { $0.id == id }) {
                 if let item = byID[id] { result.append(item) }
             }
             return result.map(RootScreen.withTile)
