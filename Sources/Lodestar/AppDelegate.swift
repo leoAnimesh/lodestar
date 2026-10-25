@@ -337,7 +337,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "sparkle.magnifyingglass", accessibilityDescription: "Lodestar")
+        item.button?.image = .lodestarMenuBarStar()
         let menu = NSMenu()
         let open = NSMenuItem(title: "Open Lodestar (\(hotkeySpec))", action: #selector(togglePanel), keyEquivalent: "")
         open.target = self
@@ -373,8 +373,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// menu offers "Stop Caffeinate (42m left)".
     private func updateCaffeinateIndicator() {
         let active = caffeinator.isActive
-        let symbol = active ? "cup.and.saucer.fill" : "sparkle.magnifyingglass"
-        statusItem?.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: active ? "Lodestar — Caffeinate is on" : "Lodestar")
+        statusItem?.button?.image = active
+            ? NSImage(systemSymbolName: "cup.and.saucer.fill", accessibilityDescription: "Lodestar — Caffeinate is on")
+            : .lodestarMenuBarStar()
         statusItem?.button?.toolTip = active ? "Caffeinate: \(caffeinator.statusText ?? "on")" : nil
         stopCaffeinateItem?.isHidden = !active
         if active, let status = caffeinator.statusText {

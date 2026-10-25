@@ -36,6 +36,28 @@ struct LodestarStarIcon: View {
     }
 }
 
+extension NSImage {
+    /// Outline guiding star for the menu bar, drawn as a template image so
+    /// macOS tints it for light/dark menu bars like an SF Symbol.
+    static func lodestarMenuBarStar(size: CGFloat = 18, lineWidth: CGFloat = 1.5) -> NSImage {
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            let inset = rect.insetBy(dx: lineWidth / 2 + 0.5, dy: lineWidth / 2 + 0.5)
+            // The star is symmetric, so SwiftUI's flipped coordinates don't matter.
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            ctx.addPath(GuideStar(waist: 0.3).path(in: inset).cgPath)
+            ctx.setLineWidth(lineWidth)
+            ctx.setLineJoin(.round)
+            ctx.setLineCap(.round)
+            ctx.setStrokeColor(NSColor.black.cgColor)
+            ctx.strokePath()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Lodestar"
+        return image
+    }
+}
+
 /// Lodestar's app mark: a night-sky tile with a bright guiding star.
 /// Drawn in code (no image assets) and also rendered into the .icns by
 /// `Lodestar --render-icon` during bundling.
