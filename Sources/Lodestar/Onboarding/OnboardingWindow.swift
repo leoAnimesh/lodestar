@@ -45,7 +45,7 @@ final class OnboardingState: ObservableObject {
 }
 
 /// The welcome window: a centered, vibrant, fixed-size window that walks
-/// through setup. Completion (or closing it) is recorded in UserDefaults.
+/// through setup. Only finishing it is recorded in UserDefaults.
 final class OnboardingWindowController: NSObject, NSWindowDelegate {
     static let size = NSSize(width: 760, height: 540)
 
@@ -86,7 +86,14 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         state.go(to: step)
         NSApp.activate(ignoringOtherApps: true)
         window.center()
+        // Another app may be frontmost when we launch (Finder, a terminal, an
+        // installer) and macOS can refuse to hand over activation. Float for a
+        // moment so the window is never left hidden behind it, then settle to
+        // a normal window so it doesn't cover System Settings later.
+        window.level = .floating
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak window] in window?.level = .normal }
         if !watching { watching = true; model.permissions.startWatching() }
     }
 
@@ -105,12 +112,10 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         model.capture.cancel()
         if watching { watching = false; model.permissions.stopWatching() }
-        // Closing early counts as "seen": it isn't shown again automatically,
-        // and "Show Welcome…" in the menu brings it back.
-        if !finishing {
-            OnboardingWindowController.markCompleted()
-            onFinish?(false)
-        }
+        // Closing early does NOT count as completing: only finishing the flow
+        // records it, so a stray close can't leave a new user without setup.
+        // "Show Welcome…" in the menu brings it back at any time.
+        if !finishing { onFinish?(false) }
     }
 
     func windowDidResignKey(_ notification: Notification) {

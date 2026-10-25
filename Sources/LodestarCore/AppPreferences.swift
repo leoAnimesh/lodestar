@@ -74,35 +74,76 @@ public enum HotkeyConflicts {
 /// First-run onboarding bookkeeping kept in UserDefaults.
 public enum Onboarding {
     /// Bump when the flow changes enough that everyone should see it again.
-    public static let currentVersion = 1
-    public static let completedVersionKey = "onboardingCompletedVersion"
+    /// 2: the permissions step became required, and the flag now only records
+    /// a flow that was actually finished.
+    public static let currentVersion = 2
+    public static let completedVersionKey = "onboarding.completedVersion"
+    /// Written by v0.1.1, which also recorded it when the window was merely
+    /// closed (or dismissed by a dev run), so its value proves nothing. Ignored
+    /// and deleted.
+    public static let untrustedCompletedVersionKey = "onboardingCompletedVersion"
     /// Set by builds before onboarding existed, when the launcher was shown on first launch.
     public static let legacyFirstLaunchKey = "didShowFirstLaunch"
+    /// When the "permission missing" reminder last opened, to keep it gentle.
+    public static let lastPermissionReminderKey = "onboarding.lastPermissionReminder"
+    /// At most one reminder per this interval (and never more than once per launch).
+    public static let reminderInterval: TimeInterval = 24 * 60 * 60
+
+    public enum Action: Equatable, Sendable {
+        case none
+        /// Open the welcome window from the first step.
+        case welcome
+        /// Open the welcome window on the permissions step.
+        case permissions
+    }
 
     public struct Decision: Equatable, Sendable {
-        /// Whether to open the welcome window now.
-        public var showOnboarding: Bool
+        public var action: Action
         /// The value to store for `completedVersionKey` (nil = leave as is).
         public var storeCompletedVersion: Int?
         /// Whether to delete the legacy key.
         public var removeLegacyKey: Bool
+        /// Whether to record "now" as the last permission reminder.
+        public var recordReminder: Bool
+
+        public var showOnboarding: Bool { action != .none }
     }
 
     /// Decides what to do at launch.
     ///
-    /// Migration: someone with the legacy flag already ran Lodestar and found
-    /// the launcher, so they're treated as having completed version 1 and are
-    /// not interrupted; they can open the welcome window from the menu.
-    public static func launchDecision(completedVersion: Int?, legacyDidShowFirstLaunch: Bool,
+    /// - Fresh install (nothing stored): the full welcome flow, always.
+    /// - Only the legacy `didShowFirstLaunch` flag: that build had no
+    ///   onboarding, so this person never saw the permission steps. If
+    ///   Accessibility is already granted they're set up and silently marked
+    ///   done; otherwise they get the flow once, starting at permissions.
+    /// - Completed an older flow version: shown again.
+    /// - Completed the current version but Accessibility is missing: a
+    ///   reminder (the permissions step), at most once a day.
+    public static func launchDecision(completedVersion: Int?,
+                                      legacyDidShowFirstLaunch: Bool,
+                                      accessibilityGranted: Bool,
+                                      lastReminder: Date? = nil,
+                                      now: Date = Date(),
                                       forceShow: Bool = false) -> Decision {
-        var completed = completedVersion
-        var store: Int?
-        if completed == nil && legacyDidShowFirstLaunch {
-            completed = 1
-            store = 1
+        func decision(_ action: Action, store: Int? = nil, reminder: Bool = false) -> Decision {
+            let willBeCompleted = (store ?? completedVersion) != nil
+            return Decision(action: action, storeCompletedVersion: store,
+                            removeLegacyKey: legacyDidShowFirstLaunch && willBeCompleted,
+                            recordReminder: reminder)
         }
-        let show = forceShow || (completed ?? 0) < currentVersion
-        return Decision(showOnboarding: show, storeCompletedVersion: store, removeLegacyKey: legacyDidShowFirstLaunch)
+        if forceShow { return decision(.welcome) }
+        if let completed = completedVersion {
+            if completed < currentVersion { return decision(.welcome) }
+            if !accessibilityGranted {
+                let due = lastReminder.map { now.timeIntervalSince($0) >= reminderInterval || $0 > now } ?? true
+                if due { return decision(.permissions, reminder: true) }
+            }
+            return decision(.none)
+        }
+        if legacyDidShowFirstLaunch {
+            return accessibilityGranted ? decision(.none, store: currentVersion) : decision(.permissions)
+        }
+        return decision(.welcome)
     }
 }
 

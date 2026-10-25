@@ -231,7 +231,7 @@ private struct PermissionsStep: View {
                 }
             }
             .frame(maxWidth: 600)
-            Text("You can skip this and grant access later in Settings › Advanced.")
+            Text("Accessibility and Automation are needed for pasting and system commands. Lodestar will remind you if Accessibility is still off. You can change these anytime in Settings › Advanced.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
