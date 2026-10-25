@@ -106,13 +106,7 @@ final class SnapshotTour {
             return nil
         }))
         states.append(("launcher-11-color-history", {
-            var sample = ColorHistory()
-            let now = Date()
-            // Oldest first, so #3A7BFF ends up newest.
-            for (i, hex) in ["#1F6FEB", "#E5484D", "#30A46C", "#F5A524", "#8E4EC6", "#3A7BFF"].enumerated() {
-                if let c = SRGBColor(hex: hex) { sample.add(c, at: now.addingTimeInterval(Double(i - 6) * 3700 + 120)) }
-            }
-            app.showPanel(pushing: ColorHistoryScreen(picker: ColorPicker(storeURL: nil, history: sample)))
+            app.showPanel(pushing: ColorHistoryScreen(picker: ColorPicker(storeURL: nil, history: SnapshotTour.sampleColors())))
             return app.launcherWindow
         }))
         states.append(("launcher-12-actions-popover", {
@@ -158,7 +152,91 @@ final class SnapshotTour {
             NSApp.appearance = previous
             return nil
         }))
+        appendUpdateStates()
+        appendHeroStates(previousAppearance: previous)
         run(0)
+    }
+
+    /// The Software Update window with a sample release (no network).
+    private func appendUpdateStates() {
+        guard let app else { return }
+        let url = URL(string: "https://github.com/leoAnimesh/lodestar/releases")!
+        let sample = GitHubRelease(
+            tagName: "v0.2.0", version: SemanticVersion("0.2.0")!, name: "Lodestar 0.2.0",
+            notes: "## What's new\n\n- **Snippets:** type a keyword to expand saved text\n- Clipboard pins now sync between windows\n- Faster app search on large Applications folders\n\n## Fixes\n\n- The launcher no longer flickers when switching Spaces",
+            htmlURL: url, publishedAt: Date(), isDraft: false, isPrerelease: false,
+            assets: [ReleaseAsset(name: "Lodestar-0.2.0.zip", downloadURL: url, size: 4_100_000),
+                     ReleaseAsset(name: "SHA256SUMS.txt", downloadURL: url, size: 170)])
+        let updates = UpdateManager.shared
+        let steps: [(String, UpdateManager.Phase)] = [
+            ("update-1-available", .available(sample)),
+            ("update-2-downloading", .downloading(received: 2_600_000, total: 4_100_000)),
+            ("update-3-up-to-date", .upToDate),
+            ("update-4-failed", .failed("Lodestar-0.2.0.zip didn't match its published checksum, so it was not used. Nothing was changed.")),
+        ]
+        for (name, phase) in steps {
+            states.append((name, {
+                updates.presentSample(phase, release: phase == .upToDate ? nil : sample)
+                return NSApp.windows.first { $0.title == "Software Update" && $0.isVisible }
+            }))
+        }
+        states.append(("hide-update", {
+            NSApp.windows.first { $0.title == "Software Update" }?.orderOut(nil)
+            updates.presentSample(.idle, release: nil)
+            return nil
+        }))
+    }
+
+    /// Dark launcher windows over the hero gradient, for `--render-hero`.
+    /// A borderless backdrop window sits just below the launcher so its
+    /// translucency picks up the banner's colors.
+    private var backdrop: NSWindow?
+
+    private func appendHeroStates(previousAppearance: NSAppearance?) {
+        guard let app else { return }
+        let showBackdrop = { [weak self] in
+            guard let self else { return }
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+            app.useSampleColorHistory(true)
+            if self.backdrop == nil {
+                let frame = (app.launcherWindow.screen ?? NSScreen.main)?.frame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000)
+                let window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+                window.level = NSWindow.Level(rawValue: app.launcherWindow.level.rawValue - 1)
+                window.ignoresMouseEvents = true
+                window.isReleasedWhenClosed = false
+                window.contentView = NSHostingView(rootView: HeroBackground())
+                self.backdrop = window
+            }
+            self.backdrop?.orderFrontRegardless()
+        }
+        let launcherQueries = [("hero-launcher", ""), ("hero-launcher-calculator", "2^10 / 4")]
+        for (name, query) in launcherQueries {
+            states.append((name, {
+                showBackdrop()
+                app.showPanel(query: query)
+                return app.launcherWindow
+            }))
+        }
+        states.append(("hero-clipboard", {
+            showBackdrop()
+            app.showPanel(pushing: ClipboardHistoryScreen(history: SnapshotTour.sampleClipboard()))
+            app.selectItem(titled: "Image")
+            return app.launcherWindow
+        }))
+        states.append(("hero-emoji", {
+            showBackdrop()
+            // A search, so the user's own Recently Used row isn't shown.
+            app.showCommand("cmd:emoji", query: "heart", select: 0)
+            return app.launcherWindow
+        }))
+        states.append(("hide-hero-backdrop", { [weak self] in
+            app.hidePanel()
+            self?.backdrop?.orderOut(nil)
+            self?.backdrop = nil
+            app.useSampleColorHistory(false)
+            NSApp.appearance = previousAppearance
+            return nil
+        }))
     }
 
     /// Clipboard History with one sample entry of each type, held in memory
@@ -196,6 +274,16 @@ final class SnapshotTour {
                 return app.launcherWindow
             }))
         }
+    }
+
+    /// Six sample colors, oldest first, so #3A7BFF ends up newest.
+    static func sampleColors() -> ColorHistory {
+        var sample = ColorHistory()
+        let now = Date()
+        for (i, hex) in ["#1F6FEB", "#E5484D", "#30A46C", "#F5A524", "#8E4EC6", "#3A7BFF"].enumerated() {
+            if let c = SRGBColor(hex: hex) { sample.add(c, at: now.addingTimeInterval(Double(i - 6) * 3700 + 120)) }
+        }
+        return sample
     }
 
     static func sampleClipboard() -> ClipboardHistory {
@@ -291,16 +379,20 @@ final class SnapshotTour {
         }
         // Let animations settle before announcing the window.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            self.announce(state.name, window.windowNumber)
+            self.announce(state.name, window.windowNumber, frame: window.frame)
             self.waitForCapture(state.name, deadline: Date().addingTimeInterval(15)) { self.run(index + 1) }
         }
     }
 
-    private func announce(_ name: String, _ windowID: Int) {
+    /// Appends "<name> <windowID> <x,y,w,h>" (the frame in screencapture's
+    /// top-left coordinates, for region captures that include what's behind).
+    private func announce(_ name: String, _ windowID: Int, frame: NSRect) {
         let url = output.appendingPathComponent("manifest.txt")
         guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? frame.maxY
+        let rect = [frame.minX, primaryHeight - frame.maxY, frame.width, frame.height].map { String(Int($0.rounded())) }
         handle.seekToEndOfFile()
-        handle.write(Data("\(name) \(windowID)\n".utf8))
+        handle.write(Data("\(name) \(windowID) \(rect.joined(separator: ","))\n".utf8))
         try? handle.close()
     }
 

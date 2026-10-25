@@ -17,6 +17,21 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"), CommandLine.ar
     }
 }
 
+// Developer aid: composite the README hero banner from hero-*.png captures
+// (see UI/HeroArt.swift) and exit.
+if let i = CommandLine.arguments.firstIndex(of: "--render-hero"), CommandLine.arguments.indices.contains(i + 2) {
+    let output = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    let shots = URL(fileURLWithPath: CommandLine.arguments[i + 2], isDirectory: true)
+    do {
+        try MainActor.assumeIsolated { try HeroArt.render(to: output, shots: shots) }
+        print("Wrote \(output.path)")
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(Data("render-hero failed: \(error.localizedDescription)\n".utf8))
+        exit(1)
+    }
+}
+
 // Developer check: runs the clipboard capture code against a private, named
 // pasteboard (never the general one) into a temporary in-memory history.
 if CommandLine.arguments.contains("--clipboard-selftest") {

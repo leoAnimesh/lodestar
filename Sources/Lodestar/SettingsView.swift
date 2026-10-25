@@ -148,6 +148,10 @@ struct GeneralSettingsPage: View {
                              : "Hidden. Open Settings with ⌘, in the launcher or the “Lodestar Settings” command. Opening Lodestar.app again shows the launcher.")
                 }
 
+                Divider().padding(.leading, 216)
+
+                UpdateSettingsRow(model: model, updates: UpdateManager.shared)
+
                 if let error = model.configError {
                     SettingsRow(label: "") { InlineMessage(kind: .error, text: error) }
                 }
@@ -279,6 +283,48 @@ struct PageHeader: View {
         }
         .padding(.leading, 70)
         .padding(.bottom, 4)
+    }
+}
+
+// MARK: - Updates
+
+/// Settings › General › Updates: the automatic-check toggles, a Check Now
+/// button and what the last check found.
+struct UpdateSettingsRow: View {
+    let model: SettingsModel
+    @ObservedObject var updates: UpdateManager
+
+    var body: some View {
+        SettingsRow(label: "Updates") {
+            Toggle("Automatically check for updates", isOn: $updates.automaticallyChecks)
+            Toggle("Include pre-releases", isOn: $updates.includePrereleases)
+            HStack(spacing: 10) {
+                Button("Check Now") { model.checkForUpdates() }
+                    .disabled(updates.isBusy)
+                if updates.isBusy { ProgressView().controlSize(.small) }
+            }
+            .padding(.top, 2)
+            Footnote(status)
+        }
+    }
+
+    private var status: String {
+        var parts = ["You have Lodestar \(updates.currentVersionText)."]
+        switch updates.phase {
+        case .checking: parts.append("Checking…")
+        case .available(let r): parts.append("Version \(r.version) is available.")
+        case .downloading, .verifying, .installing: parts.append("Installing an update…")
+        default:
+            if let error = updates.lastError {
+                parts.append("The last check failed: \(error)")
+            } else if let date = updates.lastChecked {
+                parts.append("Last checked \(date.formatted(.relative(presentation: .named))).")
+            } else {
+                parts.append("Not checked yet.")
+            }
+        }
+        parts.append("Lodestar asks GitHub once a day; nothing about you is sent.")
+        return parts.joined(separator: " ")
     }
 }
 
@@ -435,6 +481,7 @@ struct AboutSettingsPage: View {
             HStack(spacing: 10) {
                 Button("View License") { showLicense = true }
                 Button("Show Welcome Screen") { model.showOnboarding() }
+                Button("Check for Updates…") { model.checkForUpdates() }
             }
             .padding(.top, 6)
             Spacer()

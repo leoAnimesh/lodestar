@@ -20,6 +20,8 @@ protocol SettingsHost: AnyObject {
     func clearClipboardHistory()
     func showLauncher()
     func showOnboarding()
+    /// Checks GitHub for a newer release and shows the update window.
+    func checkForUpdates()
     func openSettings(tab: SettingsTab?)
 }
 
@@ -243,6 +245,7 @@ final class SettingsModel: ObservableObject {
 
     func showLauncher() { host?.showLauncher() }
     func showOnboarding() { host?.showOnboarding() }
+    func checkForUpdates() { host?.checkForUpdates() }
     func openSettings(_ tab: SettingsTab? = nil) { host?.openSettings(tab: tab) }
 
     // MARK: Saving

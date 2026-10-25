@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private lazy var settingsModel = SettingsModel(host: self, permissions: permissions)
     private var settings: SettingsWindowController?      // created on first open
     private var onboarding: OnboardingWindowController?  // created on first open
+    private let updates = UpdateManager.shared
+    private var updateWindow: UpdateWindowController?    // created on first open
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         config = LodestarConfig.load(from: LodestarPaths.configFile)
@@ -77,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         registerHotKey()
         applyConfig(config)
 
+        updates.onShowWindow = { [weak self] in self?.showUpdateWindow() }
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--snapshot"), args.indices.contains(i + 1) {
             let only = args.firstIndex(of: "--snapshot-only").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
@@ -98,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else if args.contains("--show") {
             showPanel()
         }
+        updates.start(checkNow: args.contains("--check-for-updates"))
         NSLog("Lodestar: running; press \(hotkeySpec) or use the menu bar icon to open the launcher")
     }
 
@@ -299,6 +303,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let index = model.items.firstIndex(where: { $0.title.hasPrefix(title) }) { model.selectedIndex = index }
     }
 
+    /// For the snapshot tour: show sample colors instead of the user's own
+    /// color history (in memory only), or put the real one back.
+    private var realColorPicker: ColorPicker?
+    func useSampleColorHistory(_ on: Bool) {
+        if on {
+            if realColorPicker == nil { realColorPicker = root.colorPicker }
+            root.colorPicker = ColorPicker(storeURL: nil, history: SnapshotTour.sampleColors())
+        } else if let real = realColorPicker {
+            root.colorPicker = real
+            realColorPicker = nil
+        }
+    }
+
     func openActionPopover() { if !model.isActionPanelOpen { model.toggleActionPanel() } }
 
     /// For the snapshot tour: choose a popover row by title (e.g. "Open With…").
@@ -414,6 +431,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettingsFromMenu), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
+        let checkUpdates = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdatesFromMenu), keyEquivalent: "")
+        checkUpdates.target = self
+        menu.addItem(checkUpdates)
         let welcome = NSMenuItem(title: "Show Welcome…", action: #selector(showOnboardingFromMenu), keyEquivalent: "")
         welcome.target = self
         menu.addItem(welcome)
@@ -453,6 +473,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func openSettingsFromMenu() { openSettings(tab: nil) }
     @objc private func showOnboardingFromMenu() { showOnboarding() }
+    @objc private func checkForUpdatesFromMenu() { checkForUpdates() }
+
+    private func showUpdateWindow() {
+        hidePanel()
+        if updateWindow == nil { updateWindow = UpdateWindowController(manager: updates) }
+        updateWindow?.show()
+    }
     @objc private func reloadFromMenu() { reloadExtensions() }
 
     @objc private func openConfig() {
@@ -538,6 +565,11 @@ extension AppDelegate: SettingsHost {
     func showOnboarding() {
         hidePanel()
         onboardingWindowController.show()
+    }
+
+    func checkForUpdates() {
+        hidePanel()
+        updates.checkForUpdates(userInitiated: true)
     }
 
     func openSettings(tab: SettingsTab?) {
