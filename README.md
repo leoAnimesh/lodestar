@@ -28,6 +28,8 @@ script commands and a simple JSON-over-stdio extension protocol. No accounts, no
 |---|---|
 | ![The launcher: search results mixing commands, system actions and applications](docs/screenshots/launcher.png) | ![Emoji and symbols grid with recently used items and keyboard navigation](docs/screenshots/emoji.png) |
 | **Launcher** &mdash; one search box for apps, commands and system actions. | **Emoji &amp; Symbols** &mdash; every Unicode 17.0 emoji plus symbols, searchable by name. |
+| ![Clipboard history split view: entries grouped by date on the left, an image preview and its details on the right](docs/screenshots/clipboard.png) | ![The ⌘K action popover floating over the clipboard history](docs/screenshots/actions.png) |
+| **Clipboard History** &mdash; text, links, colors, images and files, with a preview and details. | **Actions** &mdash; ⌘K opens a compact popover with every action and its shortcut. |
 | ![Settings, General tab: hotkey recorder, launch at login, appearance and launcher position](docs/screenshots/settings.png) | ![Welcome window shown on first launch](docs/screenshots/welcome.png) |
 | **Settings** &mdash; record your own hotkey; per-command aliases, hotkeys and toggles. | **Welcome** &mdash; a one-minute first-run setup with a live tour. |
 
@@ -44,6 +46,7 @@ Everything runs locally. No accounts, no analytics, no network calls of its own.
 | Settings window | Tabs for General, Extensions, Clipboard, Advanced and About. Open it from the menu-bar item, with ⌘, in the launcher, or with the **Lodestar Settings** command. |
 | Per-command settings | Turn any command off, give it an alias, or bind it to its own global hotkey (Settings › Extensions). |
 | Floating launcher panel | Non-activating `NSPanel`, so your current app stays frontmost and paste/window actions target it. |
+| Action popover | The footer shows the primary action (↩) and an **Actions ⌘K** button. ⌘K (or a click) opens a compact popover above it with every action of the selected item, its shortcut and a filter field; the list stays visible behind it. Arrows move, Return runs, typing filters, Esc or ⌘K closes. Works on every screen. |
 | Command icons | Built-in commands show a white SF Symbol on a colored, gently graded tile. App icons are shown as-is. Colors are set in one place, `UI/IconTint.swift`; extensions get a stable hashed color. |
 | App search | Scans `/Applications`, `/System/Applications`, `~/Applications`, etc. |
 | Fuzzy ranking | DP-based subsequence matcher with word-start/acronym/consecutive bonuses, blended with **frecency** (use count with a 7-day half-life). Matched letters are bolded. |
@@ -51,7 +54,7 @@ Everything runs locally. No accounts, no analytics, no network calls of its own.
 | Emoji & symbols | **Search Emoji & Symbols** opens a grid of every Unicode 17.0 emoji (1,900+, newer ones hidden on macOS versions that can't draw them) plus 880 symbols: keyboard (⌘⌥⇧⌃⏎⌫⎋⇥), arrows, math, currency, punctuation & typography, Greek letters, stars & shapes, box drawing. Search by name, CLDR keyword, flag ISO code (`jp`), the character itself or code point (`U+1F680`). Favorites and Recently Used sit on top; a default skin tone applies to people and hand emoji. Strong matches (`rocket`, `thumbs up`) also appear in the main search, below apps and commands. |
 | Pick Color | **Pick Color** samples any pixel on screen with the system eyedropper and copies it; **Color History** keeps the colors you picked. |
 | Caffeinate | **Caffeinate** / **Decaffeinate** keep your Mac awake, or let it sleep again. |
-| Clipboard history | Text only, up to 300 entries, stored owner-only (0600) in `~/Library/Application Support/Lodestar/clipboard.json`. Skips items that password managers mark concealed or transient. |
+| Clipboard history | Records text (keeping its RTF/HTML formatting for Paste), links, colors (`#hex`, `rgb()`, `hsl()`), images and file references, with the app it was copied from and when. A split view lists entries under Pinned / Today / Yesterday / This Week / Older with thumbnails and swatches, and previews the selection with an Information table (source app, type, characters/words/lines, dimensions and size, HEX/RGB, path, copied time). Filter by type with the dropdown or ⌘P. Actions: Paste, Copy, Paste as Plain Text, Open Link / Open File / Show in Finder / Open in Preview, Copy Color as HEX/RGB/HSL, Pin (⇧⌘P), Delete (⌃X) and Clear All (⌃⇧X, confirms). Up to 300 entries by default; pinned entries are never pruned. Stored owner-only: the list in `~/Library/Application Support/Lodestar/clipboard.json` (0600), images and formatting in `clipboard/` next to it (folder 0700, files 0600), deleted with their entry. Skips items that password managers mark concealed or transient. Links show a link icon; no favicons are fetched, so copying a URL never causes a network request. |
 | System commands | Lock, Sleep, Sleep Displays, Restart, Shut Down, Log Out, Empty Trash, Toggle Dark Mode, Hide All Apps, Quit All Apps, Eject All Disks. Destructive ones ask for confirmation. |
 | File search | Spotlight-backed (`NSMetadataQuery`), scoped to your home folder. |
 | Script commands | Any executable script with `@lodestar.*` metadata comments. |
@@ -67,10 +70,12 @@ Everything runs locally. No accounts, no analytics, no network calls of its own.
 | ⌫ on an empty query | Go back to the previous screen |
 | Return | Primary action |
 | ⌘Return | Secondary action |
-| ⌘K | Show all actions for the selected item |
+| ⌘K | Open or close the action popover for the selected item |
+| ⌘P | Open the type filter (Clipboard History) |
+| ⇧⌘P, ⌃X, ⌃⇧X | Pin, delete, clear all (Clipboard History) |
 | ⌘, | Open Settings |
 | ⌘1 … ⌘5 | Switch Settings tabs (in the Settings window) |
-| Esc | Close the detail view, go back, clear the query, then hide |
+| Esc | Close a popover or the detail view, go back, clear the query, then hide |
 
 ## Install (build from source)
 
@@ -81,6 +86,7 @@ swift build                 # debug build
 swift test                  # unit tests (+ a Node protocol test if `node` is installed)
 swift run Lodestar --show   # run and show the panel immediately
 swift run Lodestar --onboarding  # run and open the welcome window
+swift run Lodestar --clipboard-selftest  # check clipboard capture on a private pasteboard
 
 ./scripts/bundle.sh         # release build wrapped as build/Lodestar.app (ad-hoc signed)
 open build/Lodestar.app
@@ -281,6 +287,8 @@ Sources/
     Emoji/                 emoji catalog loading, word-based search/ranking, skin tones,
                            recents/favorites store, sectioned-grid arrow navigation
     Resources/emoji.json   generated emoji & symbol data (Unicode License v3)
+    ClipboardModel.swift   clipboard entry model + JSON migration, link/color
+                           detection, date sections, type filter, pruning
     AppPreferences.swift   appearance, launcher position, system-shortcut
                            conflicts, onboarding launch decision/migration
   Lodestar/                the app
@@ -292,19 +300,20 @@ Sources/
     ShortcutCapture.swift  one recorder for the launcher and command shortcuts
     Permissions.swift      live Accessibility/Automation/Full Disk Access status
     Onboarding/            welcome window, steps, interactive tour
-    UI/                    brand mark + icon renderer, settings components, IconTint
+    UI/                    brand mark + icon renderer, settings components, IconTint,
+                           action popover + filter dropdown
     SnapshotTour.swift     `--snapshot <dir>`: steps through every screen for screenshots
     LaunchAtLogin.swift    SMAppService.mainApp wrapper
     LauncherPanel.swift    floating non-activating NSPanel + vibrancy
-    LauncherViewModel.swift screen stack, selection, ⌘K action panel
+    LauncherViewModel.swift screen stack, selection, ⌘K action popover, filter dropdown
     LauncherView.swift     SwiftUI UI
     RootScreen.swift       apps + commands + calculator + fallbacks
     ExtensionHost.swift    registry + per-command child process sessions
-    Providers/             AppIndex, ClipboardHistory, EmojiPicker, FileSearch,
-                           ScriptCommands
+    Providers/             AppIndex, ClipboardHistory (capture/store), ClipboardScreen
+                           (split view), EmojiPicker, FileSearch, ScriptCommands
 ```
 
-Everything the user can navigate into is a `ListScreen`: root search, clipboard history, the emoji grid (a screen with `presentation = .grid`), file search, a script argument prompt, an extension session, or the ⌘K action list. The view model keeps a stack of screens. Asynchronous sources such as Spotlight and extensions push results through `ScreenHost.setItems`.
+Everything the user can navigate into is a `ListScreen`: root search, clipboard history (a screen with `presentation = .split` that supplies a detail pane), the emoji grid (`presentation = .grid`), file search, a script argument prompt or an extension session. The ⌘K action popover floats over whichever screen is showing. The view model keeps a stack of screens. Asynchronous sources such as Spotlight and extensions push results through `ScreenHost.setItems`.
 
 ## Inspired by Raycast, built independently
 
@@ -316,7 +325,6 @@ protocol for extensions, with no bundled runtime. It is not affiliated with Rayc
 
 - Snippets / text expansion (needs a `CGEventTap`, which requires Input Monitoring)
 - Quicklinks with `{query}` placeholders
-- Image clipboard entries; pinned entries
 - Richer extension UI: forms, grids, markdown rendering, preferences
 - Unit conversions and currency in the calculator
 

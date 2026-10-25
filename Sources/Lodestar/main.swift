@@ -17,6 +17,12 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-icon"), CommandLine.ar
     }
 }
 
+// Developer check: runs the clipboard capture code against a private, named
+// pasteboard (never the general one) into a temporary in-memory history.
+if CommandLine.arguments.contains("--clipboard-selftest") {
+    exit(ClipboardSelfTest.run() ? 0 : 1)
+}
+
 let app = NSApplication.shared
 // Accessory: no Dock icon or app menu; lives in the menu bar.
 app.setActivationPolicy(.accessory)

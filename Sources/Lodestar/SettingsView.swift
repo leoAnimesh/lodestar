@@ -200,7 +200,7 @@ struct ClipboardSettingsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeader(symbol: "doc.on.clipboard", tint: .orange, title: "Clipboard History",
-                           subtitle: "Lodestar remembers text you copy so you can search and paste it later.")
+                           subtitle: "Lodestar remembers text, links, colors, images and files you copy so you can find and paste them later.")
 
                 SettingsRow(label: "History") {
                     Toggle("Keep clipboard history", isOn: Binding(
@@ -215,7 +215,7 @@ struct ClipboardSettingsPage: View {
                     .labelsHidden()
                     .frame(width: 160)
                     .disabled(!model.clipboardHistoryEnabled)
-                    Footnote("The oldest entries are removed once the limit is reached.")
+                    Footnote("The oldest entries are removed once the limit is reached. Pinned entries are kept.")
                 }
 
                 SettingsRow(label: "Saved Entries") {
@@ -232,9 +232,9 @@ struct ClipboardSettingsPage: View {
 
                 SettingsRow(label: "Privacy") {
                     VStack(alignment: .leading, spacing: 8) {
-                        bullet("lock.shield", "Text only. Items that password managers mark as concealed or temporary are skipped.")
-                        bullet("internaldrive", "Stored only on this Mac, readable by your user only, at ~/Library/Application Support/Lodestar/clipboard.json.")
-                        bullet("keyboard", "Open it from the launcher with the “Clipboard History” command. Return pastes, ⌘K shows more actions.")
+                        bullet("lock.shield", "Items that password managers mark as concealed or temporary are skipped.")
+                        bullet("internaldrive", "Stored only on this Mac, readable by your user only, in ~/Library/Application Support/Lodestar (clipboard.json, plus images in the clipboard folder). Deleting an entry deletes its image.")
+                        bullet("keyboard", "Open it from the launcher with the “Clipboard History” command. Return pastes, ⌘K shows more actions, ⌘P filters by type.")
                     }
                 }
             }

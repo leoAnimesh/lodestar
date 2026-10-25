@@ -1,34 +1,94 @@
 import SwiftUI
 
+/// A `.split` screen supplies the right-hand pane for the selected item.
+protocol SplitDetailScreen: ListScreen {
+    func detailView(for item: LauncherItem?) -> AnyView
+    /// Shown in the list area when there are no items.
+    var emptyMessage: String { get }
+}
+
 struct LauncherView: View {
     @ObservedObject var model: LauncherViewModel
-    @FocusState private var searchFocused: Bool
+    @FocusState private var focus: Focus?
+
+    enum Focus: Hashable { case search, actions }
 
     var body: some View {
         VStack(spacing: 0) {
             searchBar
             Divider().opacity(0.5)
-            if let detail = model.detail {
-                DetailView(title: detail.title, text: detail.text)
-            } else if model.items.isEmpty {
-                emptyState
-            } else if case .grid(let columns) = model.presentation {
-                GlyphGrid(model: model, columns: columns)
-            } else {
-                resultsList
-            }
+            content
             Divider().opacity(0.5)
             footer
         }
         .frame(width: LauncherPanel.size.width, height: LauncherPanel.size.height, alignment: .top)
-        .onAppear { searchFocused = true }
-        .onChange(of: model.focusToken) { _ in searchFocused = true }
+        .overlay { dimming }
+        .overlay(alignment: .bottomTrailing) {
+            ActionPopover(model: model, filterFocused: $focus)
+                .padding(.trailing, 10)
+                .padding(.bottom, LauncherView.footerHeight + 6)
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
+        }
+        .overlay(alignment: .topTrailing) {
+            FilterMenu(model: model)
+                .padding(.trailing, 14)
+                .padding(.top, LauncherView.searchBarHeight - 6)
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
+        }
+        .animation(.easeOut(duration: 0.12), value: model.isActionPanelOpen)
+        .animation(.easeOut(duration: 0.12), value: model.filterMenuHighlight != nil)
+        .onAppear { focus = .search }
+        .onChange(of: model.focusToken) { _ in focus = .search }
+        .onChange(of: model.isActionPanelOpen) { open in focus = open ? .actions : .search }
+    }
+
+    static let searchBarHeight: CGFloat = 54
+    static let footerHeight: CGFloat = 36
+
+    @ViewBuilder
+    private var content: some View {
+        if let detail = model.detail {
+            DetailView(title: detail.title, text: detail.text)
+        } else if model.presentation == .split, let screen = model.currentScreen as? SplitDetailScreen {
+            SplitListView(model: model, screen: screen)
+        } else if model.items.isEmpty {
+            emptyState
+        } else if case .grid(let columns) = model.presentation {
+            GlyphGrid(model: model, columns: columns)
+        } else {
+            resultsList
+        }
+    }
+
+    /// The list stays visible, slightly dimmed, behind an open popover.
+    @ViewBuilder
+    private var dimming: some View {
+        if model.isActionPanelOpen || model.filterMenuHighlight != nil {
+            Color.black.opacity(0.10)
+                .contentShape(Rectangle())
+                .onTapGesture { model.escape() }
+                .transition(.opacity)
+        }
     }
 
     private var searchBar: some View {
         HStack(spacing: 10) {
-            LodestarStarIcon(size: 21).foregroundStyle(.secondary)
-            if let crumb = model.breadcrumb {
+            if model.stack.count > 1 {
+                Button { model.pop() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.07)))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Back (esc)")
+                .accessibilityLabel("Back")
+            } else {
+                LodestarStarIcon(size: 21).foregroundStyle(.secondary)
+            }
+            if let crumb = model.breadcrumb, model.currentScreen.showsBreadcrumb {
                 Text(crumb)
                     .font(.system(size: 12, weight: .medium))
                     .padding(.horizontal, 8).padding(.vertical, 4)
@@ -37,11 +97,12 @@ struct LauncherView: View {
             }
             TextField(model.placeholder, text: $model.query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 22, weight: .light))
-                .focused($searchFocused)
+                .font(.system(size: model.presentation == .split ? 18 : 22, weight: .light))
+                .focused($focus, equals: .search)
+            FilterDropdownButton(model: model)
         }
-        .padding(.horizontal, 18)
-        .frame(height: 54)
+        .padding(.horizontal, 16)
+        .frame(height: LauncherView.searchBarHeight)
     }
 
     private var resultsList: some View {
@@ -78,44 +139,171 @@ struct LauncherView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: Footer
+
     private var footer: some View {
-        HStack(spacing: 14) {
-            if let toast = model.toast {
-                Label(toast, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .lineLimit(1)
-            } else if case .grid = model.presentation, model.detail == nil, let item = model.selectedItem {
-                // Grid cells have no room for names: show the selection's here.
-                HStack(spacing: 6) {
-                    Text(item.title).fontWeight(.medium).lineLimit(1)
-                    if let subtitle = item.subtitle {
-                        Text(subtitle).foregroundStyle(.tertiary).lineLimit(1)
+        HStack(spacing: 10) {
+            footerLeading.layoutPriority(-1)
+            Spacer(minLength: 8)
+            if model.detail == nil, let item = model.selectedItem, let primary = item.actions.first {
+                Button { model.runSelected() } label: {
+                    HStack(spacing: 6) {
+                        Text(primary.title).foregroundStyle(.primary.opacity(0.85)).lineLimit(1)
+                        KeyCap(text: "↩")
                     }
+                    .contentShape(Rectangle())
                 }
-                .layoutPriority(-1)
+                .buttonStyle(.plain)
+                Rectangle().fill(Color.primary.opacity(0.14)).frame(width: 1, height: 14)
+                Button { model.toggleActionPanel() } label: {
+                    HStack(spacing: 6) {
+                        Text("Actions").foregroundStyle(.secondary)
+                        HStack(spacing: 3) { KeyCap(text: "⌘"); KeyCap(text: "K") }
+                    }
+                    .padding(.horizontal, 6)
+                    .frame(height: 24)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(model.isActionPanelOpen ? 0.12 : 0)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Show all actions (⌘K)")
             } else {
-                Text("Lodestar").foregroundStyle(.tertiary)
+                hint(model.detail != nil || model.stack.count > 1 ? "Back" : "Close", "esc")
             }
-            Spacer()
-            if let item = model.selectedItem, model.detail == nil {
-                if let first = item.actions.first { hint(first.title, "↩") }
-                if item.actions.count > 1 { hint("Actions", "⌘K") }
-            }
-            hint(model.detail != nil || model.stack.count > 1 ? "Back" : "Close", "esc")
         }
         .font(.system(size: 12))
-        .padding(.horizontal, 16)
-        .frame(height: 34)
+        .padding(.leading, 16)
+        .padding(.trailing, 10)
+        .frame(height: LauncherView.footerHeight)
+    }
+
+    @ViewBuilder
+    private var footerLeading: some View {
+        if let toast = model.toast {
+            Label(toast, systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .lineLimit(1)
+        } else if case .grid = model.presentation, model.detail == nil, let item = model.selectedItem {
+            // Grid cells have no room for names: show the selection's here.
+            HStack(spacing: 6) {
+                Text(item.title).fontWeight(.medium).lineLimit(1)
+                if let subtitle = item.subtitle {
+                    Text(subtitle).foregroundStyle(.tertiary).lineLimit(1)
+                }
+            }
+        } else {
+            HStack(spacing: 6) {
+                LodestarStarIcon(size: 13).foregroundStyle(.tertiary)
+                Text(model.stack.count > 1 ? model.currentScreen.title : "Lodestar")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
     }
 
     private func hint(_ label: String, _ key: String) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Text(label).foregroundStyle(.secondary)
-            Text(key)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.08)))
-                .foregroundStyle(.secondary)
+            KeyCap(text: key)
         }
+    }
+}
+
+/// The left half of a `.split` screen: a compact list under section headers.
+struct SplitListView: View {
+    @ObservedObject var model: LauncherViewModel
+    let screen: SplitDetailScreen
+
+    static let listWidth: CGFloat = 284
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Group {
+                if model.items.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "doc.on.clipboard").font(.system(size: 26)).foregroundStyle(.tertiary)
+                        Text(screen.emptyMessage).font(.system(size: 12.5)).foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    list
+                }
+            }
+            .frame(width: SplitListView.listWidth)
+            Divider().opacity(0.6)
+            screen.detailView(for: model.selectedItem)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(model.selectedItem?.id ?? "none")
+        }
+    }
+
+    private var list: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    ForEach(model.gridSections) { section in
+                        Text(section.title)
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.top, section.range.lowerBound == 0 ? 4 : 10)
+                            .padding(.bottom, 3)
+                            .id(section.id)
+                        ForEach(section.range, id: \.self) { index in
+                            let item = model.items[index]
+                            SplitRow(item: item, selected: index == model.selectedIndex)
+                                .id(item.id)
+                                .contentShape(Rectangle())
+                                .onTapGesture(count: 2) {
+                                    model.selectedIndex = index
+                                    model.runSelected()
+                                }
+                                .onTapGesture { model.selectedIndex = index }
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+            }
+            .onChange(of: model.selectedIndex) { newValue in
+                guard model.items.indices.contains(newValue) else { return }
+                if let section = model.gridSections.first(where: { $0.range.lowerBound == newValue }) {
+                    proxy.scrollTo(section.id)
+                } else {
+                    proxy.scrollTo(model.items[newValue].id)
+                }
+            }
+        }
+    }
+}
+
+struct SplitRow: View {
+    let item: LauncherItem
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ItemIconView(icon: item.icon, size: 22)
+            Text(item.title)
+                .font(.system(size: 13))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            if let accessory = item.accessory {
+                Image(systemName: accessory)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 34)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(selected ? Color.accentColor.opacity(0.24) : Color.clear))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -161,26 +349,41 @@ struct ResultRow: View {
 
 struct ItemIconView: View {
     let icon: ItemIcon
+    var size: CGFloat = 26
 
     var body: some View {
         switch icon {
         case .file(let path):
             Image(nsImage: IconCache.shared.icon(forPath: path)).resizable().aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
         case .tinted(let name, let tint):
-            TintedSymbolTile(symbol: name, tint: tint, size: 26)
+            TintedSymbolTile(symbol: name, tint: tint, size: size)
         case .symbol(let name):
             Image(systemName: name)
-                .font(.system(size: 14, weight: .medium))
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08)))
+                .font(.system(size: size * 0.54, weight: .medium))
+                .frame(width: size, height: size)
+                .background(RoundedRectangle(cornerRadius: size * 0.23).fill(Color.primary.opacity(0.08)))
         case .text(let text):
-            Text(text).font(.system(size: 18))
+            Text(text).font(.system(size: size * 0.7))
         case .swatch(let r, let g, let b):
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: size * 0.23, style: .continuous)
                 .fill(Color(.sRGB, red: r, green: g, blue: b, opacity: 1))
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.18), lineWidth: 0.5))
-                .frame(width: 22, height: 22)
-                .frame(width: 26, height: 26)
+                .overlay(RoundedRectangle(cornerRadius: size * 0.23, style: .continuous).strokeBorder(Color.primary.opacity(0.18), lineWidth: 0.5))
+                .frame(width: size * 0.85, height: size * 0.85)
+                .frame(width: size, height: size)
+        case .thumbnail(let path):
+            let shape = RoundedRectangle(cornerRadius: size * 0.18, style: .continuous)
+            Group {
+                if let image = IconCache.shared.thumbnail(forPath: path) {
+                    Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: "photo").font(.system(size: size * 0.5)).foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: size, height: size)
+            .background(Color.primary.opacity(0.06))
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
         }
     }
 }

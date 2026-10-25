@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var keyMonitor: Any?
     /// Loaded even when recording is off, so Settings can count and clear it.
     private var clipboard: ClipboardHistory!
+    private var isSnapshotRun = false
     private var emoji: EmojiLibrary!
     private var config = LodestarConfig()
     private var hotkeySpec = HotkeySpec.default
@@ -32,8 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         frecency = FrecencyStore(url: LodestarPaths.supportDirectory.appendingPathComponent("frecency.json"))
         let apps = AppIndex(extraDirectories: config.appDirectories ?? [])
-        clipboard = ClipboardHistory(limit: config.clipboardHistoryLimit ?? 300,
-                                     storeURL: LodestarPaths.supportDirectory.appendingPathComponent("clipboard.json"))
+        // The snapshot tour never touches the real history: it gets an empty
+        // in-memory one that doesn't record (it shows sample entries instead).
+        isSnapshotRun = CommandLine.arguments.contains("--snapshot")
+        clipboard = isSnapshotRun
+            ? ClipboardHistory(limit: 300, storeURL: nil, filesDirectory: SnapshotTour.scratchDirectory)
+            : ClipboardHistory.standard(limit: config.clipboardHistoryLimit ?? 300)
         let scripts = ScriptCommandStore(directory: LodestarPaths.scriptsDirectory)
         let extensions = ExtensionRegistry(directory: LodestarPaths.extensionsDirectory)
         scripts.reload()
@@ -74,7 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--snapshot"), args.indices.contains(i + 1) {
-            SnapshotTour(app: self, output: URL(fileURLWithPath: args[i + 1])).start()
+            let only = args.firstIndex(of: "--snapshot-only").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
+            SnapshotTour(app: self, output: URL(fileURLWithPath: args[i + 1]), only: only).start()
             return
         }
 
@@ -136,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let recordClipboard = newConfig.clipboardHistoryEnabled ?? true
         clipboard.limit = max(newConfig.clipboardHistoryLimit ?? 300, 1)
         if recordClipboard {
-            if root.clipboard == nil { clipboard.start() }
+            if root.clipboard == nil, !isSnapshotRun { clipboard.start() }
             root.clipboard = clipboard
         } else {
             clipboard.stop()
@@ -282,8 +288,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         model.query = query
         if let glyphIndex { model.selectedIndex = min(glyphIndex, max(model.items.count - 1, 0)) }
-        if actions { model.showActionPanel() }
+        if actions { model.toggleActionPanel() }
     }
+
+    /// For the snapshot tour.
+    func selectItem(titled title: String) {
+        if let index = model.items.firstIndex(where: { $0.title.hasPrefix(title) }) { model.selectedIndex = index }
+    }
+
+    func openActionPopover() { if !model.isActionPanelOpen { model.toggleActionPanel() } }
+    func openFilterMenu() { if model.filterMenuHighlight == nil { model.toggleFilterMenu() } }
 
     func windowDidResignKey(_ notification: Notification) {
         guard (notification.object as? NSWindow) === panel else { return }
@@ -315,21 +329,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
             guard event.window === self.panel else { return event }
-            let command = event.modifierFlags.contains(.command)
+            return self.handleLauncherKey(event) ? nil : event
+        }
+    }
+
+    /// Returns true when the launcher consumed the key.
+    private func handleLauncherKey(_ event: NSEvent) -> Bool {
+        let model = self.model!
+        let command = event.modifierFlags.contains(.command)
+        // The ⌘K popover owns the arrows, Return and Esc while it's open;
+        // other keys type into its filter field.
+        if model.isActionPanelOpen {
             switch event.keyCode {
-            case 123 where self.model.moveInGrid(.left): return nil                    // ← (grid screens)
-            case 124 where self.model.moveInGrid(.right): return nil                   // →
-            case 125: if !self.model.moveInGrid(.down) { self.model.moveSelection(1) }; return nil   // ↓
-            case 126: if !self.model.moveInGrid(.up) { self.model.moveSelection(-1) }; return nil    // ↑
-            case 51 where !command && self.model.backspaceOnEmptyQuery(): return nil  // ⌫ on empty query: back
-            case 36, 76: self.model.runSelected(actionIndex: command ? 1 : 0); return nil  // Return / Enter
-            case 53: self.model.escape(); return nil                                   // Esc
-            case 40 where command: self.model.showActionPanel(); return nil            // ⌘K
-            case 43 where command: self.openSettings(tab: nil); return nil             // ⌘,
-            case 45 where event.modifierFlags.contains(.control): self.model.moveSelection(1); return nil  // ⌃N
-            case 35 where event.modifierFlags.contains(.control): self.model.moveSelection(-1); return nil // ⌃P
-            default: return event
+            case 125: model.moveActionSelection(1); return true                     // ↓
+            case 126: model.moveActionSelection(-1); return true                    // ↑
+            case 45 where event.modifierFlags.contains(.control): model.moveActionSelection(1); return true   // ⌃N
+            case 35 where event.modifierFlags.contains(.control): model.moveActionSelection(-1); return true  // ⌃P
+            case 36, 76: model.runActionPanelRow(); return true                      // Return
+            case 53: model.closeActionPanel(); return true                           // Esc
+            case 40 where command: model.closeActionPanel(); return true             // ⌘K
+            default: return model.runShortcut(event)
             }
+        }
+        if model.filterMenuHighlight != nil {
+            switch event.keyCode {
+            case 125: model.moveFilterHighlight(1); return true
+            case 126: model.moveFilterHighlight(-1); return true
+            case 36, 76: model.chooseFilter(); return true
+            case 53: model.escape(); return true
+            case 35 where command: model.toggleFilterMenu(); return true             // ⌘P
+            default: return true  // swallow typing while the menu is open
+            }
+        }
+        if model.runShortcut(event) { return true }
+        switch event.keyCode {
+        case 123 where model.moveInGrid(.left): return true                    // ← (grid screens)
+        case 124 where model.moveInGrid(.right): return true                   // →
+        case 125: if !model.moveInGrid(.down) { model.moveSelection(1) }; return true   // ↓
+        case 126: if !model.moveInGrid(.up) { model.moveSelection(-1) }; return true    // ↑
+        case 51 where !command && model.backspaceOnEmptyQuery(): return true  // ⌫ on empty query: back
+        case 36, 76: model.runSelected(actionIndex: command ? 1 : 0); return true  // Return / Enter
+        case 53: model.escape(); return true                                   // Esc
+        case 40 where command: model.toggleActionPanel(); return true          // ⌘K
+        case 35 where command && model.filterableScreen != nil: model.toggleFilterMenu(); return true  // ⌘P
+        case 43 where command: openSettings(tab: nil); return true             // ⌘,
+        case 45 where event.modifierFlags.contains(.control): model.moveSelection(1); return true  // ⌃N
+        case 35 where event.modifierFlags.contains(.control): model.moveSelection(-1); return true // ⌃P
+        default: return false
         }
     }
 

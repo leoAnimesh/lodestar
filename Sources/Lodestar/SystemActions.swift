@@ -13,6 +13,11 @@ enum SystemActions {
     /// Posting keyboard events requires the Accessibility permission.
     static func paste(_ text: String) {
         copy(text)
+        pressPaste()
+    }
+
+    /// Synthesizes ⌘V into the frontmost app (whatever is on the pasteboard).
+    static func pressPaste() {
         guard ensureAccessibility(prompt: true) else { return }
         let source = CGEventSource(stateID: .combinedSessionState)
         let vKey: CGKeyCode = 9

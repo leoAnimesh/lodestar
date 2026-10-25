@@ -216,7 +216,7 @@ final class RootScreen: ListScreen {
     }
 
     static let builtinSummaries: [String: String] = [
-        "cmd:clipboard": "Browse and search text you've copied. Return pastes into the frontmost app.",
+        "cmd:clipboard": "Browse and search what you've copied: text, links, colors, images and files, with a preview and details. Return pastes into the frontmost app; ⌘K pins, copies or deletes; ⌘P filters by type.",
         "cmd:files": "Finds files in your home folder with Spotlight as you type.",
         "cmd:emoji": "Browse and search every Unicode emoji plus arrows, math, currency, keyboard and other symbols. Return pastes into the frontmost app, ⌘K copies the name or code point and manages favorites. Strong matches (such as “rocket”) also appear in the main search.",
         "cmd:reload": "Re-reads the scripts and extensions folders.",

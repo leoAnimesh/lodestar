@@ -18,6 +18,11 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     @Published private(set) var toast: String?
     @Published private(set) var focusToken = 0
     @Published private(set) var stack: [ListScreen]
+    /// The ⌘K popover, when open. It floats over the list; the list keeps its
+    /// selection so the actions apply to the selected item.
+    @Published private(set) var actionPanel: ActionPanelState?
+    /// The filter dropdown of a `FilterableScreen`, when open: the highlighted option.
+    @Published private(set) var filterMenuHighlight: Int?
 
     let frecency: FrecencyStore
     var onHide: (() -> Void)?
@@ -38,6 +43,37 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     var breadcrumb: String? { stack.count > 1 ? currentScreen.title : nil }
     var selectedItem: LauncherItem? { items.indices.contains(selectedIndex) ? items[selectedIndex] : nil }
     var presentation: ScreenPresentation { currentScreen.presentation }
+    var filterableScreen: FilterableScreen? { currentScreen as? FilterableScreen }
+    var isActionPanelOpen: Bool { actionPanel != nil }
+
+    struct ActionPanelState {
+        let item: LauncherItem
+        var query = ""
+        var selected = 0
+
+        struct Row: Identifiable {
+            /// Index in `item.actions`.
+            let index: Int
+            let action: LauncherAction
+            /// "↩", "⌘↩" or the action's own shortcut.
+            let shortcut: String?
+            /// Separator above (only when unfiltered).
+            let separated: Bool
+            var id: Int { index }
+        }
+
+        var rows: [Row] {
+            let all = item.actions.enumerated().map { index, action in
+                Row(index: index, action: action,
+                    shortcut: index == 0 ? "↩" : index == 1 ? "⌘↩" : action.shortcut?.label,
+                    separated: index > 0 && action.startsSection)
+            }
+            let q = query.trimmingCharacters(in: .whitespaces)
+            guard !q.isEmpty else { return all }
+            return all.filter { FuzzyMatcher.match(q, in: $0.action.title) != nil }
+                .map { Row(index: $0.index, action: $0.action, shortcut: $0.shortcut, separated: false) }
+        }
+    }
 
     struct GridSection: Identifiable {
         let title: String
@@ -59,6 +95,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
 
     /// Called each time the panel is shown.
     func prepareForShow() {
+        closeOverlays()
         popToRoot()
         query = ""
         detail = nil
@@ -74,6 +111,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     // MARK: Navigation
 
     func push(_ screen: ListScreen) {
+        closeOverlays()
         screen.host = self
         savedQueries.append(query)
         savedSelections.append(selectedItem?.id)
@@ -85,6 +123,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
 
     func pop() {
         guard stack.count > 1 else { return }
+        closeOverlays()
         stack.removeLast().dismissed()
         let selectedID = savedSelections.popLast() ?? nil
         query = savedQueries.popLast() ?? ""
@@ -118,13 +157,15 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
 
     /// Backspace with an empty query goes back from a pushed screen.
     func backspaceOnEmptyQuery() -> Bool {
-        guard query.isEmpty, detail == nil, stack.count > 1 else { return false }
+        guard query.isEmpty, detail == nil, stack.count > 1, actionPanel == nil, filterMenuHighlight == nil else { return false }
         pop()
         return true
     }
 
-    /// Escape: close detail, then pop, then clear query, then hide.
+    /// Escape: close a popover, then detail, then pop, then clear query, then hide.
     func escape() {
+        if actionPanel != nil { closeActionPanel(); return }
+        if filterMenuHighlight != nil { filterMenuHighlight = nil; return }
         if detail != nil { detail = nil; focusToken += 1; return }
         if stack.count > 1 { pop(); return }
         if !query.isEmpty { query = ""; return }
@@ -136,10 +177,90 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
         run(item.actions[actionIndex], of: item)
     }
 
-    /// ⌘K: show every action of the selected item as its own list.
-    func showActionPanel() {
-        guard let item = selectedItem, item.actions.count > 1 else { return }
-        push(ActionPanelScreen(item: item, owner: self))
+    // MARK: Action popover (⌘K)
+
+    /// ⌘K or the footer's Actions button: opens or closes the popover.
+    func toggleActionPanel() {
+        if actionPanel != nil { closeActionPanel(); return }
+        guard detail == nil, let item = selectedItem, !item.actions.isEmpty else { return }
+        filterMenuHighlight = nil
+        actionPanel = ActionPanelState(item: item)
+    }
+
+    func closeActionPanel() {
+        guard actionPanel != nil else { return }
+        actionPanel = nil
+        focusToken += 1
+    }
+
+    var actionPanelQuery: String {
+        get { actionPanel?.query ?? "" }
+        set {
+            guard actionPanel != nil, newValue != actionPanel?.query else { return }
+            actionPanel?.query = newValue
+            actionPanel?.selected = 0
+        }
+    }
+
+    func moveActionSelection(_ delta: Int) {
+        guard let panel = actionPanel else { return }
+        let count = panel.rows.count
+        guard count > 0 else { return }
+        actionPanel?.selected = (panel.selected + delta + count) % count
+    }
+
+    /// Runs the highlighted row (or the row at `rowIndex` when clicked).
+    func runActionPanelRow(_ rowIndex: Int? = nil) {
+        guard let panel = actionPanel else { return }
+        let rows = panel.rows
+        let index = rowIndex ?? panel.selected
+        guard rows.indices.contains(index) else { return }
+        let action = rows[index].action
+        closeActionPanel()
+        run(action, of: panel.item)
+    }
+
+    /// A key bound to one of the selected item's actions (e.g. ⌃X). Works
+    /// with or without the popover open.
+    func runShortcut(_ event: NSEvent) -> Bool {
+        guard detail == nil, let item = actionPanel?.item ?? selectedItem,
+              let action = item.actions.first(where: { $0.shortcut?.matches(event) == true }) else { return false }
+        closeActionPanel()
+        run(action, of: item)
+        return true
+    }
+
+    // MARK: Filter dropdown (⌘P)
+
+    func toggleFilterMenu() {
+        guard let screen = filterableScreen else { return }
+        if filterMenuHighlight != nil { filterMenuHighlight = nil; return }
+        closeActionPanel()
+        filterMenuHighlight = screen.filterOptions.firstIndex { $0.id == screen.selectedFilterID } ?? 0
+    }
+
+    func moveFilterHighlight(_ delta: Int) {
+        guard let highlight = filterMenuHighlight, let count = filterableScreen?.filterOptions.count, count > 0 else { return }
+        filterMenuHighlight = (highlight + delta + count) % count
+    }
+
+    func highlightFilter(_ index: Int) {
+        guard filterMenuHighlight != nil, filterMenuHighlight != index else { return }
+        filterMenuHighlight = index
+    }
+
+    func chooseFilter(_ index: Int? = nil) {
+        guard let screen = filterableScreen, let i = index ?? filterMenuHighlight,
+              screen.filterOptions.indices.contains(i) else { return }
+        filterMenuHighlight = nil
+        screen.selectFilter(screen.filterOptions[i].id)
+        refresh()
+        focusToken += 1
+    }
+
+    private func closeOverlays() {
+        actionPanel = nil
+        filterMenuHighlight = nil
     }
 
     func run(_ action: LauncherAction, of item: LauncherItem) {
@@ -189,42 +310,5 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
 
     func hideLauncher() {
         onHide?()
-    }
-}
-
-/// The ⌘K action list for one item.
-final class ActionPanelScreen: ListScreen {
-    let title: String
-    let placeholder = "Search actions…"
-    weak var host: ScreenHost?
-    private let item: LauncherItem
-    private weak var owner: LauncherViewModel?
-
-    init(item: LauncherItem, owner: LauncherViewModel) {
-        self.item = item
-        self.owner = owner
-        self.title = "Actions — \(item.title)"
-    }
-
-    func search(_ query: String) -> [LauncherItem] {
-        let base = item
-        let rows = item.actions.enumerated().map { index, action -> LauncherItem in
-            LauncherItem(
-                id: "action:\(index)",
-                title: action.title,
-                subtitle: nil,
-                icon: .symbol(action.symbol),
-                accessory: index == 0 ? "↩" : index == 1 ? "⌘↩" : nil,
-                actions: [LauncherAction(action.title, symbol: action.symbol) { [weak self] in
-                    guard let owner = self?.owner else { return .stay }
-                    owner.pop()
-                    if base.tracksUsage { owner.frecency.recordUse(of: base.id) }
-                    return action.perform()
-                }],
-                tracksUsage: false
-            )
-        }
-        guard !query.isEmpty else { return rows }
-        return rows.filter { FuzzyMatcher.match(query, in: $0.title) != nil }
     }
 }
