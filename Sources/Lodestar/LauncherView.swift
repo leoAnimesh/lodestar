@@ -40,6 +40,11 @@ struct LauncherView: View {
         .onAppear { focus = .search }
         .onChange(of: model.focusToken) { _ in focus = .search }
         .onChange(of: model.isActionPanelOpen) { open in focus = open ? .actions : .search }
+        // Deferred: when the popover opens straight into a nested list (⌘⇧O),
+        // its field may not exist yet in this update.
+        .onChange(of: model.actionFocusToken) { _ in
+            DispatchQueue.main.async { if model.isActionPanelOpen { focus = .actions } }
+        }
     }
 
     static let searchBarHeight: CGFloat = 54

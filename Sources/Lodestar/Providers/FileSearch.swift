@@ -69,8 +69,9 @@ final class FileSearchScreen: ListScreen {
                 subtitle: (display as NSString).deletingLastPathComponent,
                 icon: .file(path),
                 actions: [
-                    LauncherAction("Open", symbol: "arrow.up.forward.app") { SystemActions.open(URL(fileURLWithPath: path)); return .close },
-                    LauncherAction("Reveal in Finder", symbol: "folder") { SystemActions.reveal(path); return .close },
+                    LauncherAction("Open", symbol: "arrow.up.forward.app", shortcut: .open) { SystemActions.open(URL(fileURLWithPath: path)); return .close },
+                    LauncherAction("Reveal in Finder", symbol: "folder", shortcut: .reveal) { SystemActions.reveal(path); return .close },
+                    OpenWith.action(for: [URL(fileURLWithPath: path)]),
                     LauncherAction("Copy Path", symbol: "doc.on.doc") { SystemActions.copy(path); return .toast("Path copied") },
                 ],
                 matchedIndices: indices,

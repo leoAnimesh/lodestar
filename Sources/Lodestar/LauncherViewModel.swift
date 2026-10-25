@@ -6,17 +6,27 @@ import LodestarCore
 /// detail view and toasts. Everything here runs on the main thread.
 final class LauncherViewModel: ObservableObject, ScreenHost {
     @Published var query: String = "" {
-        didSet { if query != oldValue { refresh() } }
+        didSet { if query != oldValue { refresh(resetSelection: true) } }
     }
     @Published private(set) var items: [LauncherItem] = [] {
         didSet { gridSections = LauncherViewModel.sections(of: items) }
     }
     /// Consecutive runs of `items` that share a `section` (grid screens).
     private(set) var gridSections: [GridSection] = []
-    @Published var selectedIndex: Int = 0
+    /// The one source of truth for the selected row, by item ID. The list
+    /// highlight, the split view's detail pane, the footer and the ⌘K
+    /// popover all read it; refreshing the items keeps the same item.
+    @Published private(set) var selection = ListSelection()
+    /// The selected row's position in `items` (derived from `selection`).
+    var selectedIndex: Int {
+        get { selection.index }
+        set { selection.select(index: newValue, in: items.map(\.id)) }
+    }
     @Published private(set) var detail: (title: String, text: String)?
     @Published private(set) var toast: String?
     @Published private(set) var focusToken = 0
+    /// Bumped when the popover changes page, to keep typing in its search field.
+    @Published private(set) var actionFocusToken = 0
     @Published private(set) var stack: [ListScreen]
     /// The ⌘K popover, when open. It floats over the list; the list keeps its
     /// selection so the actions apply to the selected item.
@@ -41,15 +51,32 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     var currentScreen: ListScreen { stack[stack.count - 1] }
     var placeholder: String { currentScreen.placeholder }
     var breadcrumb: String? { stack.count > 1 ? currentScreen.title : nil }
-    var selectedItem: LauncherItem? { items.indices.contains(selectedIndex) ? items[selectedIndex] : nil }
+    var selectedItem: LauncherItem? {
+        guard items.indices.contains(selection.index), items[selection.index].id == selection.id else { return nil }
+        return items[selection.index]
+    }
     var presentation: ScreenPresentation { currentScreen.presentation }
     var filterableScreen: FilterableScreen? { currentScreen as? FilterableScreen }
     var isActionPanelOpen: Bool { actionPanel != nil }
 
     struct ActionPanelState {
-        let item: LauncherItem
+        /// Always the selected item (see `reconcileActionPanel`).
+        var item: LauncherItem
         var query = ""
         var selected = 0
+        /// A nested list opened from one of the item's actions (Open With…).
+        var submenu: Submenu?
+
+        struct Submenu {
+            let title: String
+            let actions: [LauncherAction]
+            /// The main list's highlight and filter, restored on back.
+            let parentSelected: Int
+            let parentQuery: String
+        }
+
+        /// The actions on the current page of the popover.
+        var actions: [LauncherAction] { submenu?.actions ?? item.actions }
 
         struct Row: Identifiable {
             /// Index in `item.actions`.
@@ -63,9 +90,10 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
         }
 
         var rows: [Row] {
-            let all = item.actions.enumerated().map { index, action in
+            let inSubmenu = submenu != nil
+            let all = actions.enumerated().map { index, action in
                 Row(index: index, action: action,
-                    shortcut: index == 0 ? "↩" : index == 1 ? "⌘↩" : action.shortcut?.label,
+                    shortcut: inSubmenu ? nil : index == 0 ? "↩" : index == 1 ? "⌘↩" : action.shortcut?.label,
                     separated: index > 0 && action.startsSection)
             }
             let q = query.trimmingCharacters(in: .whitespaces)
@@ -99,13 +127,41 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
         popToRoot()
         query = ""
         detail = nil
-        refresh()
+        refresh(resetSelection: true)
         focusToken += 1
     }
 
-    func refresh() {
-        items = currentScreen.search(query)
-        selectedIndex = 0
+    /// Re-runs the current screen's search. `resetSelection` (a new query, or
+    /// the launcher being shown) goes back to the first row; otherwise, e.g.
+    /// after an app-index rescan or a settings change, the selected item stays
+    /// selected and an open ⌘K popover keeps acting on it.
+    func refresh(resetSelection: Bool = false) {
+        apply(currentScreen.search(query), resetSelection: resetSelection)
+    }
+
+    /// The only place `items` changes, so the selection can't drift from it.
+    private func apply(_ newItems: [LauncherItem], resetSelection: Bool) {
+        items = newItems
+        let ids = newItems.map(\.id)
+        if resetSelection { selection.reset(in: ids) } else { selection.update(to: ids) }
+        reconcileActionPanel()
+    }
+
+    /// Keeps the popover on the selected item: picks up its refreshed actions
+    /// (e.g. Pin became Unpin), or closes the popover when the item is gone, so
+    /// an action can never run on an entry other than the highlighted one.
+    private func reconcileActionPanel() {
+        guard let panel = actionPanel else { return }
+        guard let item = selectedItem, item.id == panel.item.id else {
+            actionPanel = nil
+            focusToken += 1
+            return
+        }
+        if panel.submenu == nil {
+            actionPanel?.item = item
+            let count = actionPanel?.rows.count ?? 0
+            if panel.selected >= count { actionPanel?.selected = max(count - 1, 0) }
+        }
     }
 
     // MARK: Navigation
@@ -117,7 +173,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
         savedSelections.append(selectedItem?.id)
         stack.append(screen)
         query = ""
-        refresh()
+        refresh(resetSelection: true)
         focusToken += 1
     }
 
@@ -127,9 +183,9 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
         stack.removeLast().dismissed()
         let selectedID = savedSelections.popLast() ?? nil
         query = savedQueries.popLast() ?? ""
-        refresh()
+        refresh(resetSelection: true)
         // Come back to the item that was selected (e.g. after ⌘K in a grid).
-        if let selectedID, let index = items.firstIndex(where: { $0.id == selectedID }) { selectedIndex = index }
+        if let selectedID { selection.select(id: selectedID, in: items.map(\.id)) }
         focusToken += 1
     }
 
@@ -164,6 +220,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
 
     /// Escape: close a popover, then detail, then pop, then clear query, then hide.
     func escape() {
+        if actionPanel?.submenu != nil { actionPanelBack(); return }
         if actionPanel != nil { closeActionPanel(); return }
         if filterMenuHighlight != nil { filterMenuHighlight = nil; return }
         if detail != nil { detail = nil; focusToken += 1; return }
@@ -193,6 +250,33 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
         focusToken += 1
     }
 
+    /// Opens an action's nested list (Open With…) inside the popover,
+    /// opening the popover first when the action came from a shortcut.
+    private func openSubmenu(_ action: LauncherAction, of item: LauncherItem) {
+        guard let submenu = action.submenu else { return }
+        if actionPanel == nil || actionPanel?.item.id != item.id {
+            filterMenuHighlight = nil
+            actionPanel = ActionPanelState(item: item)
+        }
+        guard let panel = actionPanel else { return }
+        actionPanel?.submenu = .init(title: action.title.replacingOccurrences(of: "…", with: ""),
+                                     actions: submenu(), parentSelected: panel.selected, parentQuery: panel.query)
+        actionPanel?.query = ""
+        actionPanel?.selected = 0
+        actionFocusToken += 1
+    }
+
+    var isInActionSubmenu: Bool { actionPanel?.submenu != nil }
+
+    /// Esc, ← or the back button in a nested list: back to the main actions.
+    func actionPanelBack() {
+        guard let submenu = actionPanel?.submenu else { return }
+        actionPanel?.submenu = nil
+        actionPanel?.query = submenu.parentQuery
+        actionPanel?.selected = submenu.parentSelected
+        actionFocusToken += 1
+    }
+
     var actionPanelQuery: String {
         get { actionPanel?.query ?? "" }
         set {
@@ -216,6 +300,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
         let index = rowIndex ?? panel.selected
         guard rows.indices.contains(index) else { return }
         let action = rows[index].action
+        if action.submenu != nil { openSubmenu(action, of: panel.item); return }
         closeActionPanel()
         run(action, of: panel.item)
     }
@@ -225,6 +310,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     func runShortcut(_ event: NSEvent) -> Bool {
         guard detail == nil, let item = actionPanel?.item ?? selectedItem,
               let action = item.actions.first(where: { $0.shortcut?.matches(event) == true }) else { return false }
+        if action.submenu != nil { openSubmenu(action, of: item); return true }
         closeActionPanel()
         run(action, of: item)
         return true
@@ -254,7 +340,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
               screen.filterOptions.indices.contains(i) else { return }
         filterMenuHighlight = nil
         screen.selectFilter(screen.filterOptions[i].id)
-        refresh()
+        refresh(resetSelection: true)
         focusToken += 1
     }
 
@@ -264,6 +350,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
     }
 
     func run(_ action: LauncherAction, of item: LauncherItem) {
+        if action.submenu != nil { openSubmenu(action, of: item); return }
         if item.tracksUsage { frecency.recordUse(of: item.id) }
         handle(action.perform())
     }
@@ -291,9 +378,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
 
     func setItems(_ newItems: [LauncherItem], for screen: ListScreen) {
         guard screen === currentScreen else { return }
-        let previousID = selectedItem?.id
-        items = newItems
-        selectedIndex = newItems.firstIndex { $0.id == previousID } ?? 0
+        apply(newItems, resetSelection: false)
     }
 
     func showToast(_ message: String) {

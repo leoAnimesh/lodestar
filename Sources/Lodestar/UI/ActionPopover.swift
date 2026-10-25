@@ -50,22 +50,15 @@ struct ActionPopover: View {
         if let panel = model.actionPanel {
             let rows = panel.rows
             VStack(spacing: 0) {
-                Text(panel.item.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.top, 9)
-                    .padding(.bottom, 3)
-                list(rows, selected: panel.selected)
+                header(panel)
+                list(rows, selected: panel.selected, emptyText: panel.submenu != nil && panel.query.isEmpty
+                     ? "No apps can open this item" : panel.submenu != nil ? "No matching apps" : "No matching actions")
                 Divider().opacity(0.6)
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.tertiary)
-                    TextField("Search for actions…", text: Binding(
+                    TextField(panel.submenu != nil ? "Search apps…" : "Search for actions…", text: Binding(
                         get: { model.actionPanelQuery }, set: { model.actionPanelQuery = $0 }))
                         .textFieldStyle(.plain)
                         .font(.system(size: 12.5))
@@ -81,10 +74,49 @@ struct ActionPopover: View {
         }
     }
 
+    /// The item's title; in a nested list, a back button with the list's title.
     @ViewBuilder
-    private func list(_ rows: [LauncherViewModel.ActionPanelState.Row], selected: Int) -> some View {
+    private func header(_ panel: LauncherViewModel.ActionPanelState) -> some View {
+        if let submenu = panel.submenu {
+            Button { model.actionPanelBack() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 10, weight: .bold))
+                    Text(submenu.title)
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(panel.item.title)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Back to actions (esc)")
+            .accessibilityLabel("Back to actions")
+            .padding(.horizontal, 14)
+            .padding(.top, 9)
+            .padding(.bottom, 3)
+        } else {
+            Text(panel.item.title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.top, 9)
+                .padding(.bottom, 3)
+        }
+    }
+
+    @ViewBuilder
+    private func list(_ rows: [LauncherViewModel.ActionPanelState.Row], selected: Int, emptyText: String) -> some View {
         if rows.isEmpty {
-            Text("No matching actions")
+            Text(emptyText)
                 .font(.system(size: 12.5))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -127,15 +159,29 @@ struct ActionPopoverRow: View {
     var body: some View {
         let tint: Color = row.action.isDestructive ? .red : .primary
         HStack(spacing: 9) {
-            Image(systemName: row.action.symbol)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(row.action.isDestructive ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
-                .frame(width: 16, height: 16)
+            if let icon = row.action.icon {
+                ItemIconView(icon: icon, size: 16)
+            } else {
+                Image(systemName: row.action.symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(row.action.isDestructive ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                    .frame(width: 16, height: 16)
+            }
             Text(row.action.title)
                 .font(.system(size: 13))
                 .foregroundStyle(tint)
                 .lineLimit(1)
             Spacer(minLength: 8)
+            if let badge = row.action.badge {
+                Text(badge)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            if row.action.submenu != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
             if let shortcut = row.shortcut {
                 HStack(spacing: 3) {
                     ForEach(Array(ActionPopoverRow.keys(shortcut).enumerated()), id: \.offset) { _, key in

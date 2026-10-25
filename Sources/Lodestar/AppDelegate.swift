@@ -292,11 +292,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// For the snapshot tour.
+    func moveSelection(to index: Int) { model.selectedIndex = index }
+
+    /// For the snapshot tour.
     func selectItem(titled title: String) {
         if let index = model.items.firstIndex(where: { $0.title.hasPrefix(title) }) { model.selectedIndex = index }
     }
 
     func openActionPopover() { if !model.isActionPanelOpen { model.toggleActionPanel() } }
+
+    /// For the snapshot tour: choose a popover row by title (e.g. "Open With…").
+    func chooseAction(titled title: String) {
+        guard let rows = model.actionPanel?.rows, let index = rows.firstIndex(where: { $0.action.title == title }) else { return }
+        model.runActionPanelRow(index)
+    }
+
+    /// For the snapshot tour: the kind of background refresh (app index
+    /// rescan, settings or caffeinate change) that once reset the visible
+    /// selection to the first row while the popover kept acting on another.
+    func simulateBackgroundRefresh() { model.refresh() }
     func openFilterMenu() { if model.filterMenuHighlight == nil { model.toggleFilterMenu() } }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -346,7 +360,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case 45 where event.modifierFlags.contains(.control): model.moveActionSelection(1); return true   // ⌃N
             case 35 where event.modifierFlags.contains(.control): model.moveActionSelection(-1); return true  // ⌃P
             case 36, 76: model.runActionPanelRow(); return true                      // Return
-            case 53: model.closeActionPanel(); return true                           // Esc
+            case 53: model.escape(); return true                                     // Esc: back, then close
+            case 123 where model.isInActionSubmenu && model.actionPanelQuery.isEmpty:  // ← in a nested list
+                model.actionPanelBack(); return true
             case 40 where command: model.closeActionPanel(); return true             // ⌘K
             default: return model.runShortcut(event)
             }

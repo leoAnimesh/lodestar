@@ -175,7 +175,7 @@ final class ExtensionSession: ListScreen {
     }
 
     private func convert(_ item: ExtensionItem, index: Int) -> LauncherItem {
-        let actions = (item.actions ?? []).map { action -> LauncherAction in
+        var actions = (item.actions ?? []).map { action -> LauncherAction in
             switch action {
             case .open(let url):
                 return LauncherAction("Open", symbol: "arrow.up.forward.app") {
@@ -192,6 +192,11 @@ final class ExtensionSession: ListScreen {
                     return .stay
                 }
             }
+        }
+        // An item that opens a local file or folder also gets Open With….
+        if let fileOpen = item.actions?.firstIndex(where: { if case .open(let raw) = $0 { return URL(string: raw)?.isFileURL == true }; return false }),
+           case .open(let raw) = item.actions?[fileOpen], let url = URL(string: raw) {
+            actions.insert(OpenWith.action(for: [url]), at: fileOpen + 1)
         }
         return LauncherItem(
             id: "ext:\(installed.manifest.name):\(item.id ?? String(index))",

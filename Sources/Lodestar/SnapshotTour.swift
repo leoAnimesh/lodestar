@@ -117,7 +117,9 @@ final class SnapshotTour {
         }))
         states.append(("launcher-12-actions-popover", {
             app.showPanel(query: "cal")
+            app.moveSelection(to: 1)
             app.openActionPopover()
+            app.simulateBackgroundRefresh()
             return app.launcherWindow
         }))
         appendClipboardStates(prefix: "clipboard", full: true)
@@ -164,6 +166,8 @@ final class SnapshotTour {
     private func appendClipboardStates(prefix: String, full: Bool) {
         guard let app else { return }
         var steps: [(String, String, Bool, Bool)] = [  // name, entry title, actions, filter menu
+            // With actions, a background refresh runs after the popover opens:
+            // the highlight, preview and popover must all stay on the entry.
             ("1-text", "func greet", false, false),
             ("2-image", "Image (1404×538)", false, false),
             ("3-actions", "Image (1404×538)", true, false),
@@ -178,8 +182,17 @@ final class SnapshotTour {
                 if prefix.hasPrefix("light-") { NSApp.appearance = NSAppearance(named: .aqua) }
                 app.showPanel(pushing: ClipboardHistoryScreen(history: SnapshotTour.sampleClipboard()))
                 app.selectItem(titled: title)
-                if actions { app.openActionPopover() }
+                if actions { app.openActionPopover(); app.simulateBackgroundRefresh() }
                 if filter { app.openFilterMenu() }
+                return app.launcherWindow
+            }))
+        }
+        if full {
+            states.append(("\(prefix)-9-open-with", {
+                app.showPanel(pushing: ClipboardHistoryScreen(history: SnapshotTour.sampleClipboard()))
+                app.selectItem(titled: "hosts")
+                app.openActionPopover()
+                app.chooseAction(titled: "Open With…")
                 return app.launcherWindow
             }))
         }

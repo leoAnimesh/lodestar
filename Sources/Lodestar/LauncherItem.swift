@@ -27,17 +27,34 @@ struct LauncherAction {
     var isDestructive = false
     /// Draws a separator above this action in the popover.
     var startsSection = false
+    /// Drawn instead of `symbol` in the popover (e.g. an app's icon).
+    var icon: ItemIcon?
+    /// A short label at the right of the popover row, e.g. "Default".
+    var badge: String?
+    /// When set, choosing the action opens this nested list inside the ⌘K
+    /// popover (Esc or ← goes back) instead of running `perform`.
+    var submenu: (() -> [LauncherAction])?
     let perform: () -> ActionOutcome
 
     init(_ title: String, symbol: String = "return", shortcut: ActionShortcut? = nil,
          isDestructive: Bool = false, startsSection: Bool = false,
+         icon: ItemIcon? = nil, badge: String? = nil,
          perform: @escaping () -> ActionOutcome) {
         self.title = title
         self.symbol = symbol
         self.shortcut = shortcut
         self.isDestructive = isDestructive
         self.startsSection = startsSection
+        self.icon = icon
+        self.badge = badge
         self.perform = perform
+    }
+
+    /// An action that opens a nested list in the popover.
+    init(_ title: String, symbol: String, shortcut: ActionShortcut? = nil, startsSection: Bool = false,
+         submenu: @escaping () -> [LauncherAction]) {
+        self.init(title, symbol: symbol, shortcut: shortcut, startsSection: startsSection) { .stay }
+        self.submenu = submenu
     }
 }
 
@@ -69,6 +86,7 @@ struct ActionShortcut: Equatable {
     static let pastePlain = ActionShortcut(keyCode: 9, modifiers: [.command, .shift], key: "V")
     static let open = ActionShortcut(keyCode: 31, modifiers: [.command], key: "O")
     static let reveal = ActionShortcut(keyCode: 3, modifiers: [.command, .shift], key: "F")
+    static let openWith = ActionShortcut(keyCode: 31, modifiers: [.command, .shift], key: "O")
     static let copyHex = ActionShortcut(keyCode: 8, modifiers: [.command, .shift], key: "C")
     static let copyRGB = ActionShortcut(keyCode: 8, modifiers: [.command, .option], key: "C")
 }

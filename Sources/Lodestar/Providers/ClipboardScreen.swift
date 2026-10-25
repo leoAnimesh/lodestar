@@ -157,6 +157,7 @@ final class ClipboardHistoryScreen: ListScreen, FilterableScreen, SplitDetailScr
                 NSWorkspace.shared.activateFileViewerSelecting(paths.map { URL(fileURLWithPath: $0) })
                 return .close
             })
+            actions.append(OpenWith.action(for: paths.map { URL(fileURLWithPath: $0) }))
             actions.append(LauncherAction("Paste Path as Text", symbol: "textformat", shortcut: .pastePlain) {
                 ClipboardHistoryScreen.paste(entry, history: history, plainText: true)
             })
