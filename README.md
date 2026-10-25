@@ -34,17 +34,6 @@ analytics, no tracking.
 - **Make it yours.** Change the shortcut, give commands short aliases, or bind any command to its own hotkey.
 - **Add your own commands.** Drop in a shell script, or write an extension in any language.
 
-| | |
-|---|---|
-| ![The launcher: one search box for apps, commands and system actions](docs/screenshots/launcher.png) | ![Emoji and symbols grid with keyboard navigation](docs/screenshots/emoji.png) |
-| **Launcher** — one search box for apps, commands and system actions. | **Emoji & Symbols** — every emoji plus hundreds of symbols, searchable by name. |
-| ![Clipboard history: entries by date on the left, a preview and details on the right](docs/screenshots/clipboard.png) | ![The ⌘K actions menu floating over the clipboard history](docs/screenshots/actions.png) |
-| **Clipboard History** — text, links, colors, images and files, with a preview. | **Actions** — ⌘K shows everything you can do with the selected item. |
-| ![Settings: shortcut recorder, launch at login, appearance and launcher position](docs/screenshots/settings.png) | ![Welcome window shown on first launch](docs/screenshots/welcome.png) |
-| **Settings** — your own shortcut, aliases and per-command hotkeys. | **Welcome** — a one-minute setup with a live tour. |
-
-<sub>Screenshots use sample data only; no personal information is shown.</sub>
-
 ## Install
 
 ### Download
