@@ -1,0 +1,30 @@
+{
+  "url": "https://api.github.com/repos/leoAnimesh/lodestar/releases/1",
+  "html_url": "https://github.com/leoAnimesh/lodestar/releases/tag/v0.2.0",
+  "id": 1,
+  "tag_name": "v0.2.0",
+  "target_commitish": "main",
+  "name": "Lodestar 0.2.0",
+  "draft": false,
+  "prerelease": false,
+  "created_at": "2026-11-01T10:00:00Z",
+  "published_at": "2026-11-01T10:05:00Z",
+  "assets": [
+    {
+      "name": "Lodestar-0.2.0.dmg",
+      "size": 4200000,
+      "browser_download_url": "https://github.com/leoAnimesh/lodestar/releases/download/v0.2.0/Lodestar-0.2.0.dmg"
+    },
+    {
+      "name": "Lodestar-0.2.0.zip",
+      "size": 3900000,
+      "browser_download_url": "https://github.com/leoAnimesh/lodestar/releases/download/v0.2.0/Lodestar-0.2.0.zip"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "size": 180,
+      "browser_download_url": "https://github.com/leoAnimesh/lodestar/releases/download/v0.2.0/SHA256SUMS.txt"
+    }
+  ],
+  "body": "## What's new\n\n- **Clipboard** pins survive restarts\n- Faster app search\n\n<details>\n<summary>All changes</summary>\n\n* Fix a crash by @someone in #12\n</details>\n"
+}
