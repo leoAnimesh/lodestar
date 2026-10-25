@@ -10,8 +10,8 @@
 # (see docs/RELEASING.md). Until the first release is published, `sha256` is
 # a placeholder and the cask can't be installed.
 cask "lodestar" do
-  version "0.1.1"
-  sha256 "bf9fd274fef61068736f23c6180f70dfa1a454f18e7f7450a9342dcc30810b55"
+  version "0.1.2"
+  sha256 "b676b82c87f361bea296ab8950546e7ba8d8ae64d8d9ad57fb0636dc451426e3"
 
   url "https://github.com/leoAnimesh/lodestar/releases/download/v#{version}/Lodestar-#{version}.dmg"
   name "Lodestar"
