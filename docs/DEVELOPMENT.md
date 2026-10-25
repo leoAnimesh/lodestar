@@ -107,16 +107,17 @@ cat > "$E/server/latest.json" <<JSON
  {"name":"SHA256SUMS.txt","browser_download_url":"http://127.0.0.1:8765/SHA256SUMS.txt"}]}
 JSON
 (cd "$E/server" && python3 -m http.server 8765 --bind 127.0.0.1) &
-CFFIXED_USER_HOME="$E/home" LODESTAR_UPDATE_URL=http://127.0.0.1:8765/latest.json \
+LODESTAR_UPDATE_URL=http://127.0.0.1:8765/latest.json \
   "$E/Applications/Lodestar.app/Contents/MacOS/Lodestar" --check-for-updates
 ```
 
 `--check-for-updates` checks right after launch. Quit your normal Lodestar first, and use a copy
 outside the repository: a `build/Lodestar.app` next to `Package.swift` counts as a development build and
-is never replaced (the updater offers the release page instead). `CFFIXED_USER_HOME` keeps the test
-instance's preferences and clipboard history away from your real ones. Afterwards, rebuild your normal
-app with `./scripts/bundle.sh` (packaging 9.9.9 replaced `build/Lodestar.app`) and empty
-`previous-Lodestar.app` from the Trash.
+is never replaced (the updater offers the release page instead). The test copy has the same bundle
+ID, so it shares your preferences and data folders; don't copy anything while it runs. Afterwards,
+rebuild your normal app with `./scripts/bundle.sh` (packaging 9.9.9 replaced `build/Lodestar.app`),
+empty `previous-Lodestar.app` from the Trash, and clear the test's update state:
+`for k in lastCheck etag etagURL cachedResponse updatedFrom skippedVersion; do defaults delete io.github.lodestar-launcher updates.$k; done`
 
 Tamper with `SHA256SUMS.txt`, remove the zip's line, or change the tag to check that the install fails
 closed and leaves the installed app untouched.
