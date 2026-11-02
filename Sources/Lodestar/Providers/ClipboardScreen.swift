@@ -184,13 +184,19 @@ final class ClipboardHistoryScreen: ListScreen, FilterableScreen, SplitDetailScr
         return actions
     }
 
-    /// Paste needs Accessibility (to send ⌘V); without it, copy and say so.
+    /// Puts the entry on the clipboard, closes the launcher and pastes it into
+    /// the app that was frontmost. Sending ⌘V needs Accessibility; without it
+    /// the entry is still copied and the launcher still closes, so the user
+    /// can press ⌘V themselves.
     private static func paste(_ entry: ClipboardEntry, history: ClipboardHistory, plainText: Bool) -> ActionOutcome {
         history.write(entry, plainText: plainText)
-        guard SystemActions.ensureAccessibility(prompt: false) else {
-            return .toast("Copied — allow Accessibility in Settings to paste directly")
+        return .closeThen {
+            if SystemActions.ensureAccessibility(prompt: false) {
+                SystemActions.pressPaste()
+            } else {
+                HUD.show("Copied — allow Accessibility in Settings to paste directly", symbol: "doc.on.doc", duration: 2.6)
+            }
         }
-        return .closeThen { SystemActions.pressPaste() }
     }
 
     // MARK: Detail
