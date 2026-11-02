@@ -7,14 +7,26 @@
 #   VERSION        marketing version; defaults to the VERSION file (single source of truth)
 #   BUILD_NUMBER   CFBundleVersion; defaults to the commit count, so it only grows along main
 #   ARCH_FLAGS     extra swift build flags, e.g. "--arch arm64 --arch x86_64" for a universal app
-#   SIGN_IDENTITY  "-" (default) signs ad hoc; a "Developer ID Application: … (TEAMID)" identity
-#                  signs with the hardened runtime and a secure timestamp, ready for notarization
+#   SIGN_IDENTITY  a "Developer ID Application: … (TEAMID)" identity signs with the hardened runtime
+#                  and a secure timestamp, ready for notarization; "-" signs ad hoc. When unset, the
+#                  first Developer ID Application identity in your keychain is used, else ad hoc.
+#                  A stable identity keeps macOS permissions (Accessibility, Automation) granted
+#                  across rebuilds; an ad-hoc build is a new app to macOS every time.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${VERSION:-$(tr -d '[:space:]' < VERSION)}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
-SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+if [ -z "${SIGN_IDENTITY:-}" ]; then
+  SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -n 1)"
+  SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+fi
+if [ "$SIGN_IDENTITY" = "-" ]; then
+  echo "Signing: ad hoc (macOS permissions won't survive a rebuild)"
+else
+  echo "Signing: $SIGN_IDENTITY"
+fi
 # shellcheck disable=SC2086  # ARCH_FLAGS is a list of flags
 read -r -a ARCH <<< "${ARCH_FLAGS:-}"
 if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
