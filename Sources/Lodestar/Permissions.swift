@@ -24,12 +24,24 @@ final class PermissionsMonitor: ObservableObject {
     @Published private(set) var accessibility: Status = .unknown
     @Published private(set) var automation: Status = .unknown
     @Published private(set) var fullDiskAccess: Status = .unknown
+    /// Lodestar has asked for Accessibility before, so it's already listed in
+    /// System Settings and the next request can open the pane directly.
+    @Published private(set) var accessibilityRequested: Bool
 
+    private static let accessibilityRequestedKey = "permissions.accessibilityRequested"
     private var timer: Timer?
+    private var activationObserver: NSObjectProtocol?
     private var watchers = 0
     private var tick = 0
 
-    init() { refresh(includeSlow: true) }
+    init() {
+        accessibilityRequested = UserDefaults.standard.bool(forKey: PermissionsMonitor.accessibilityRequestedKey)
+        refresh(includeSlow: true)
+    }
+
+    /// Required (non-optional) permissions that are granted, for summaries.
+    var requiredGrantedCount: Int { [accessibility, automation].filter { $0 == .granted }.count }
+    let requiredCount = 2
 
     func startWatching() {
         watchers += 1
@@ -41,6 +53,11 @@ final class PermissionsMonitor: ObservableObject {
             // AX is cheap; the Apple Events and file checks run every few seconds.
             self.refresh(includeSlow: self.tick % 3 == 0)
         }
+        // Coming back from System Settings: update right away, not on the next tick.
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refresh(includeSlow: true)
+        }
     }
 
     func stopWatching() {
@@ -48,6 +65,8 @@ final class PermissionsMonitor: ObservableObject {
         guard watchers == 0 else { return }
         timer?.invalidate()
         timer = nil
+        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
+        activationObserver = nil
     }
 
     func refresh(includeSlow: Bool = true) {
@@ -109,6 +128,12 @@ final class PermissionsMonitor: ObservableObject {
         case fullDiskAccess = "Privacy_AllFiles"
     }
 
+    /// What System Settings calls the Accessibility list on this macOS
+    /// ("Device Control and Data Access" from macOS 27).
+    static var accessibilityPaneName: String {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 ? "Device Control and Data Access" : "Accessibility"
+    }
+
     static func open(_ pane: Pane) {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane.rawValue)") {
             NSWorkspace.shared.open(url)
@@ -121,11 +146,22 @@ final class PermissionsMonitor: ObservableObject {
         }
     }
 
-    /// Shows the system Accessibility prompt (which also lists Lodestar in
-    /// Settings) and opens the pane.
+    /// The first time, shows the system Accessibility prompt: it adds
+    /// Lodestar to the list in System Settings and its button opens the pane.
+    /// After that the prompt adds nothing, so go straight to the pane.
     func requestAccessibility() {
-        if !SystemActions.ensureAccessibility(prompt: true) { PermissionsMonitor.open(.accessibility) }
+        if accessibilityRequested {
+            PermissionsMonitor.open(.accessibility)
+        } else {
+            markAccessibilityRequested()
+            SystemActions.ensureAccessibility(prompt: true)
+        }
         refresh(includeSlow: false)
+    }
+
+    private func markAccessibilityRequested() {
+        accessibilityRequested = true
+        UserDefaults.standard.set(true, forKey: PermissionsMonitor.accessibilityRequestedKey)
     }
 
     /// Asks macOS to show its Automation consent prompt for System Events.
