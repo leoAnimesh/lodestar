@@ -9,7 +9,7 @@ swift run Lodestar --show        # run and show the launcher immediately
 swift run Lodestar --onboarding  # run and open the welcome window
 swift run Lodestar --clipboard-selftest  # check clipboard capture on a private pasteboard
 
-./scripts/bundle.sh              # release build wrapped as build/Lodestar.app (ad-hoc signed)
+./scripts/bundle.sh              # release build wrapped as build/Lodestar.app (signed with your Developer ID if you have one, else ad hoc)
 open build/Lodestar.app
 ```
 

@@ -211,25 +211,7 @@ private struct PermissionsStep: View {
         VStack(spacing: 22) {
             StepHeader(title: "Grant permissions",
                        subtitle: "Some features need your OK in System Settings. Statuses update here as soon as you change them.")
-            Card(padding: 14) {
-                PermissionRow(symbol: "hand.raised.fill", tint: .blue, title: "Accessibility",
-                              detail: "Paste from clipboard history and emoji into other apps, and Lock Screen.",
-                              status: permissions.accessibility, buttonTitle: "Grant Access…") {
-                    permissions.requestAccessibility()
-                }
-                Divider()
-                PermissionRow(symbol: "gearshape.2.fill", tint: .purple, title: "Automation",
-                              detail: "Run system commands such as Sleep, Lock Screen and Toggle Dark Mode.",
-                              status: permissions.automation, buttonTitle: "Allow…") {
-                    permissions.requestAutomation()
-                }
-                Divider()
-                PermissionRow(symbol: "externaldrive.fill", tint: .gray, title: "Full Disk Access",
-                              detail: "Let file search reach folders macOS protects, such as Mail.",
-                              status: permissions.fullDiskAccess, optional: true, buttonTitle: "Open Settings…") {
-                    PermissionsMonitor.open(.fullDiskAccess)
-                }
-            }
+            PermissionsList(permissions: permissions, padding: 14)
             .frame(maxWidth: 600)
             Text("Accessibility and Automation are needed for pasting and system commands. Lodestar will remind you if Accessibility is still off. You can change these anytime in Settings › Advanced.")
                 .font(.system(size: 11.5))

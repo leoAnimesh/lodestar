@@ -340,26 +340,8 @@ struct AdvancedSettingsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 sectionTitle("Permissions")
-                Card(padding: 12) {
-                    PermissionRow(symbol: "hand.raised.fill", tint: .blue, title: "Accessibility",
-                                  detail: "Pasting from clipboard history and emoji into other apps, and Lock Screen.",
-                                  status: permissions.accessibility, buttonTitle: "Grant Access…") {
-                        permissions.requestAccessibility()
-                    }
-                    Divider()
-                    PermissionRow(symbol: "gearshape.2.fill", tint: .purple, title: "Automation",
-                                  detail: "System commands such as Sleep, Empty Trash and Toggle Dark Mode.",
-                                  status: permissions.automation, buttonTitle: "Allow…") {
-                        permissions.requestAutomation()
-                    }
-                    Divider()
-                    PermissionRow(symbol: "externaldrive.fill", tint: .gray, title: "Full Disk Access",
-                                  detail: "Lets file search reach folders macOS protects, such as Mail.",
-                                  status: permissions.fullDiskAccess, optional: true, buttonTitle: "Open Settings…") {
-                        PermissionsMonitor.open(.fullDiskAccess)
-                    }
-                }
-                Footnote("Statuses update live. Lodestar never changes these for you; buttons open the system prompt or the matching System Settings pane.")
+                PermissionsList(permissions: permissions)
+                Footnote("Statuses update live, including when you come back from System Settings. Lodestar never switches these on for you; the buttons open the system prompt or the matching System Settings pane.")
 
                 sectionTitle("Files")
                 Card(padding: 12) {

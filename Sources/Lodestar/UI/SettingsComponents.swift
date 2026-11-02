@@ -130,6 +130,75 @@ struct StatusPill: View {
     }
 }
 
+/// Every permission Lodestar uses, with live statuses, a one-line summary
+/// and the fix for a stale Accessibility grant. Shared by Settings and
+/// onboarding so both always show the same flow.
+struct PermissionsList: View {
+    @ObservedObject var permissions: PermissionsMonitor
+    var padding: CGFloat = 12
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            summary
+            Card(padding: padding) {
+                VStack(alignment: .leading, spacing: 8) {
+                    PermissionRow(symbol: "hand.raised.fill", tint: .blue, title: "Accessibility",
+                                  detail: "Paste from clipboard history and emoji into other apps, and Lock Screen.",
+                                  status: permissions.accessibility,
+                                  buttonTitle: permissions.accessibilityRequested ? "Open System Settings…" : "Grant Access…") {
+                        permissions.requestAccessibility()
+                    }
+                    if permissions.accessibility == .denied {
+                        StaleAccessibilityHint()
+                    }
+                }
+                Divider()
+                PermissionRow(symbol: "gearshape.2.fill", tint: .purple, title: "Automation",
+                              detail: "Run system commands such as Sleep, Empty Trash and Toggle Dark Mode.",
+                              status: permissions.automation,
+                              buttonTitle: permissions.automation == .denied ? "Open System Settings…" : "Allow…") {
+                    if permissions.automation == .denied { PermissionsMonitor.open(.automation) } else { permissions.requestAutomation() }
+                }
+                Divider()
+                PermissionRow(symbol: "externaldrive.fill", tint: .gray, title: "Full Disk Access",
+                              detail: "Let file search reach folders macOS protects, such as Mail.",
+                              status: permissions.fullDiskAccess, optional: true, buttonTitle: "Open System Settings…") {
+                    PermissionsMonitor.open(.fullDiskAccess)
+                }
+            }
+        }
+    }
+
+    private var summary: some View {
+        let granted = permissions.requiredGrantedCount, total = permissions.requiredCount
+        let done = granted == total
+        return HStack(spacing: 6) {
+            Image(systemName: done ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundStyle(done ? Color.green : Color.orange)
+            Text(done ? "All required permissions are granted"
+                      : "\(granted) of \(total) required permissions granted")
+                .font(.system(size: 12, weight: .medium))
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Shown under Accessibility while it's off. The usual cause of "on in
+/// System Settings but Not Granted" is a switch that belongs to an older copy
+/// of Lodestar (a rebuild or a differently signed update).
+private struct StaleAccessibilityHint: View {
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "info.circle").foregroundStyle(.secondary)
+            Text("Switch Lodestar on in System Settings › Privacy & Security › \(PermissionsMonitor.accessibilityPaneName). Already on but still Not Granted? It belongs to an older copy of Lodestar: select it, remove it with −, then add Lodestar again.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.leading, 48)  // line up with the row's text, past the icon
+    }
+}
+
 /// One permission: icon, explanation, live status and a button.
 struct PermissionRow: View {
     let symbol: String

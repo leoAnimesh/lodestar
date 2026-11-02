@@ -36,6 +36,9 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
 
     let frecency: FrecencyStore
     var onHide: (() -> Void)?
+    /// Called after hiding for actions that act on the user's app (paste),
+    /// so it can be made frontmost again if Lodestar had become active.
+    var onRestoreFocus: (() -> Void)?
 
     private var savedQueries: [String] = []
     /// The selected item's ID on each screen below the top, restored on pop.
@@ -361,6 +364,7 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
             hideLauncher()
         case .closeThen(let work):
             hideLauncher()
+            onRestoreFocus?()
             // Give the window server a moment to return focus to the user's app.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
         case .stay:

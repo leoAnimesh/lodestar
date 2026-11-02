@@ -19,7 +19,7 @@ ZIP="$OUT/Lodestar-$VERSION.zip"
 DMG="$OUT/Lodestar-$VERSION.dmg"
 
 if [ "${1:-}" != "--skip-build" ]; then
-  VERSION="$VERSION" ./scripts/bundle.sh
+  VERSION="$VERSION" SIGN_IDENTITY="$SIGN_IDENTITY" ./scripts/bundle.sh
 fi
 [ -d "$APP" ] || { echo "error: $APP is missing; run scripts/bundle.sh" >&2; exit 1; }
 built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"

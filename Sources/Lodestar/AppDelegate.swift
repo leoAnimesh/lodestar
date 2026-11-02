@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotkeySpec = HotkeySpec.default
     private var launcherPosition = LauncherPosition.upperThird
     private var openMenuItem: NSMenuItem?
+    /// The app that was frontmost when the launcher opened; paste actions
+    /// send ⌘V to it, so it's reactivated if Lodestar became active meanwhile.
+    private var previousApp: NSRunningApplication?
     /// Keeps the Mac awake on request; drives the menu-bar cup indicator.
     let caffeinator = Caffeinator()
     private var stopCaffeinateItem: NSMenuItem?
@@ -68,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         model = LauncherViewModel(root: root, frecency: frecency)
         model.onHide = { [weak self] in self?.hidePanel() }
+        model.onRestoreFocus = { [weak self] in self?.restorePreviousApp() }
 
         panel = LauncherPanel(rootView: LauncherView(model: model))
         panel.delegate = self
@@ -234,6 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .closeThen(let work):
             if panel.isVisible {
                 hidePanel()
+                restorePreviousApp()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
             } else {
                 work()
@@ -262,6 +267,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         root.apps.refreshIfStale { [weak self] in
             if self?.panel.isVisible == true { self?.model.refresh() }
         }
+        if let front = NSWorkspace.shared.frontmostApplication, front != NSRunningApplication.current {
+            previousApp = front
+        }
         model.prepareForShow()
         panel.position(launcherPosition)
         panel.makeKeyAndOrderFront(nil)
@@ -271,6 +279,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard panel.isVisible else { return }
         panel.orderOut(nil)
         model.popToRoot()
+    }
+
+    /// The panel is non-activating, so normally the user's app never loses
+    /// focus. But an alert, Settings or onboarding can make Lodestar the active
+    /// app; then hand focus back so a following paste lands in the right place.
+    private func restorePreviousApp() {
+        guard NSApp.isActive, let app = previousApp, !app.isTerminated else { return }
+        if NSApp.windows.contains(where: { $0 !== panel && $0.isVisible && $0.canBecomeMain }) { return }
+        app.activate(options: [])
     }
 
     /// For the snapshot tour: show the launcher with a query typed in.

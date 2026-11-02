@@ -24,14 +24,14 @@ analytics, no tracking.
 ## What it does
 
 - **Open any app in a keystroke.** Type `sl` for Slack or `cal` for Calendar. A few letters from anywhere in the name are enough, and the apps you use most rise to the top.
-- **Never lose something you copied.** Clipboard history keeps text, links, images, colors and files. Pin the ones you reuse. Your history stays on your Mac.
+- **Never lose something you copied.** Clipboard history keeps text, links, images, colors and files. Press Return to paste one straight into the app you're typing in. Pin the ones you reuse. Your history stays on your Mac.
 - **Emoji and symbols, by name.** Type `rocket` or `thumbs up`, press Return, and it's pasted. Includes ⌘ ⌥ ⇧ arrows, math and currency symbols too.
 - **Quick math.** Type `2^10 / 4` and see `256` right away. Return copies the answer.
 - **Pick any color on screen.** Grab a pixel, get its HEX or RGB, and find it again later in Color History.
 - **Keep your Mac awake.** Caffeinate stops your Mac from sleeping during a download or a talk.
 - **Find files.** Search your home folder and open a file, show it in Finder, or open it with another app.
 - **Control your Mac.** Lock, sleep, restart, empty the Trash, toggle Dark Mode and more.
-- **Do more with ⌘K.** Every result has extra actions, each with its own shortcut.
+- **Do more with ⌘K.** Every result has extra actions, each with its own shortcut. Uninstall an app with ⌃X: it and its leftover files go to the Trash.
 - **Make it yours.** Change the shortcut, give commands short aliases, or bind any command to its own hotkey.
 - **Add your own commands.** Drop in a shell script, or write an extension in any language.
 
