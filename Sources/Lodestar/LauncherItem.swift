@@ -82,6 +82,7 @@ struct ActionShortcut: Equatable {
 
     static let deleteEntry = ActionShortcut(keyCode: 7, modifiers: [.control], key: "X")
     static let clearAll = ActionShortcut(keyCode: 7, modifiers: [.control, .shift], key: "X")
+    static let uninstall = ActionShortcut(keyCode: 7, modifiers: [.control], key: "X")
     static let pin = ActionShortcut(keyCode: 35, modifiers: [.command, .shift], key: "P")
     static let pastePlain = ActionShortcut(keyCode: 9, modifiers: [.command, .shift], key: "V")
     static let open = ActionShortcut(keyCode: 31, modifiers: [.command], key: "O")

@@ -229,14 +229,7 @@ final class RootScreen: ListScreen {
 
     private func appItems() -> [LauncherItem] {
         apps.apps.map { app in
-            LauncherItem(
-                id: "app:\(app.path)",
-                title: app.name,
-                subtitle: nil,
-                icon: .file(app.path),
-                accessory: "Application",
-                keywords: [app.bundleID?.split(separator: ".").last.map(String.init)].compactMap { $0 },
-                actions: [
+            var actions = [
                     LauncherAction("Open Application", symbol: "arrow.up.forward.app") {
                         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: app.path),
                                                            configuration: NSWorkspace.OpenConfiguration())
@@ -250,6 +243,19 @@ final class RootScreen: ListScreen {
                         return running.isEmpty ? .toast("\(app.name) is not running") : .close
                     },
                 ]
+            // The launcher closes after an uninstall; rescanning now means the
+            // app is gone from results the next time it opens.
+            if let uninstall = AppUninstaller.action(for: app, onRemoved: { [weak self] in
+                self?.apps.refreshIfStale(maxAge: 0)
+            }) { actions.append(uninstall) }
+            return LauncherItem(
+                id: "app:\(app.path)",
+                title: app.name,
+                subtitle: nil,
+                icon: .file(app.path),
+                accessory: "Application",
+                keywords: [app.bundleID?.split(separator: ".").last.map(String.init)].compactMap { $0 },
+                actions: actions
             )
         }
     }
