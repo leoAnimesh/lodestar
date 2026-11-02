@@ -10,8 +10,8 @@
 # (see docs/RELEASING.md). Releases are signed with a Developer ID and
 # notarized, so macOS opens the app without a Gatekeeper prompt.
 cask "lodestar" do
-  version "0.1.2"
-  sha256 "b676b82c87f361bea296ab8950546e7ba8d8ae64d8d9ad57fb0636dc451426e3"
+  version "0.2.0"
+  sha256 "3d15b451c93630439d7288d13a881f464d41ac93f212b3f1cc263dada0112e2a"
 
   url "https://github.com/leoAnimesh/lodestar/releases/download/v#{version}/Lodestar-#{version}.dmg"
   name "Lodestar"
