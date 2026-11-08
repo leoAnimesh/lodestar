@@ -63,6 +63,8 @@ enum IconTint: String, CaseIterable {
         "cmd:caffeinate-2h": .brown,
         "cmd:decaffeinate": .brown,
         "calc": .green,
+        "currency": .green,
+        "cmd:typing": .indigo,
         "fallback:web": .blue,
     ]
 

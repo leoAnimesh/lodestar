@@ -27,6 +27,8 @@ analytics, no tracking.
 - **Never lose something you copied.** Clipboard history keeps text, links, images, colors and files. Press Return to paste one straight into the app you're typing in. Pin the ones you reuse. Your history stays on your Mac.
 - **Emoji and symbols, by name.** Type `rocket` or `thumbs up`, press Return, and it's pasted. Includes ⌘ ⌥ ⇧ arrows, math and currency symbols too.
 - **Quick math.** Type `2^10 / 4` and see `256` right away. Return copies the answer.
+- **Convert currency.** Type `100 usd to eur`, `$20` or `50€` and see the converted amount as you type.
+- **Practice typing.** Typing Test measures your words per minute and accuracy, and marks your mistakes.
 - **Pick any color on screen.** Grab a pixel, get its HEX or RGB, and find it again later in Color History.
 - **Keep your Mac awake.** Caffeinate stops your Mac from sleeping during a download or a talk.
 - **Find files.** Search your home folder and open a file, show it in Finder, or open it with another app.
@@ -116,6 +118,8 @@ Accessibility back on**: open System Settings › Privacy & Security › Accessi
 - Copying a link never makes a network request.
 - The only network request Lodestar makes on its own is the daily update check to api.github.com
   (you can turn it off). Web search and opening links happen only when you ask.
+- Typing a currency conversion such as `100 usd to eur` downloads exchange rates from open.er-api.com
+  (at most every 6 hours). Nothing you type is sent.
 
 ## Customize and extend
 
@@ -134,7 +138,7 @@ Scripts and extensions run with your user permissions, so only install ones you 
 - Snippets / text expansion
 - Quicklinks with `{query}` placeholders
 - Richer extension UI (forms, grids, preferences)
-- Unit and currency conversion in the calculator
+- Unit conversion in the calculator
 
 ## Contributing
 
