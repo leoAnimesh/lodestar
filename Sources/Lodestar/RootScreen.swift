@@ -24,6 +24,9 @@ final class RootScreen: ListScreen {
     var caffeinator: Caffeinator?
     /// Enable/alias/hotkey settings; disabled commands never appear in search.
     var preferences = CommandPreferences()
+    let currency = CurrencyRates()
+    /// For async results (currency rates) to re-run the latest search.
+    private var lastQuery = ""
 
     init(apps: AppIndex, clipboard: ClipboardHistory?, scripts: ScriptCommandStore, extensions: ExtensionRegistry, frecency: FrecencyStore) {
         self.apps = apps
@@ -37,6 +40,7 @@ final class RootScreen: ListScreen {
 
     func search(_ query: String) -> [LauncherItem] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
+        lastQuery = query
         let caffeinated = caffeinator?.isActive ?? false
         let all = CaffeinateCommands.arrange(allItems(), active: caffeinated)
 
@@ -58,6 +62,12 @@ final class RootScreen: ListScreen {
         var results: [LauncherItem] = []
         if let value = Calculator.evaluateIfCalculation(trimmed) {
             results.append(calculatorItem(expression: trimmed, value: value))
+        }
+        if let item = currency.item(for: trimmed, onLoad: { [weak self] in
+            guard let self else { return }
+            self.host?.setItems(self.search(self.lastQuery), for: self)
+        }) {
+            results.append(item)
         }
 
         let candidates = all.map { SearchCandidate(id: $0.id, title: $0.title, keywords: $0.keywords) }
@@ -217,6 +227,7 @@ final class RootScreen: ListScreen {
 
     static let builtinSummaries: [String: String] = [
         "cmd:clipboard": "Browse and search what you've copied: text, links, colors, images and files, with a preview and details. Return pastes into the frontmost app; ⌘K pins, copies or deletes; ⌘P filters by type.",
+        "cmd:typing": "Measures your typing speed (WPM) and accuracy on random words. Return starts a new test.",
         "cmd:files": "Finds files in your home folder with Spotlight as you type.",
         "cmd:emoji": "Browse and search every Unicode emoji plus arrows, math, currency, keyboard and other symbols. Return pastes into the frontmost app, ⌘K copies the name or code point and manages favorites. Strong matches (such as “rocket”) also appear in the main search.",
         "cmd:reload": "Re-reads the scripts and extensions folders.",
@@ -280,6 +291,9 @@ final class RootScreen: ListScreen {
                 .push(EmojiScreen(library: emoji))
             })
         }
+        items.append(command("cmd:typing", "Typing Test", symbol: "keyboard", keywords: ["typing practice", "wpm", "speed"]) {
+            .push(TypingTestScreen())
+        })
         items.append(command("cmd:files", "Search Files", symbol: "doc.text.magnifyingglass", keywords: ["find", "spotlight"]) {
             .push(FileSearchScreen())
         })
