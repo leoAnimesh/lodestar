@@ -245,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         case .stay:
             break
-        case .push(let screen):
+        case .push(let screen), .replace(let screen):
             showPanel()
             model.push(screen)
         case .detail(let title, let text):

@@ -15,9 +15,17 @@ struct LauncherView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Custom screens draw their own UI; the field stays alive (focused) as the input.
             searchBar
-            Divider().opacity(0.5)
+                .frame(height: hidesSearchBar ? 0 : nil)
+                .opacity(hidesSearchBar ? 0 : 1)
+                .allowsHitTesting(!hidesSearchBar)
+            if !hidesSearchBar { Divider().opacity(0.5) }
             content
+                // The hidden search bar takes its back button with it; keep one.
+                .overlay(alignment: .topLeading) {
+                    if hidesSearchBar { backButton.padding(.leading, 16).padding(.top, 20) }
+                }
             Divider().opacity(0.5)
             footer
         }
@@ -47,6 +55,8 @@ struct LauncherView: View {
         }
     }
 
+    private var hidesSearchBar: Bool { model.presentation == .custom }
+
     static let searchBarHeight: CGFloat = 54
     static let footerHeight: CGFloat = 36
 
@@ -56,6 +66,8 @@ struct LauncherView: View {
             DetailView(title: detail.title, text: detail.text)
         } else if model.presentation == .split, let screen = model.currentScreen as? SplitDetailScreen {
             SplitListView(model: model, screen: screen)
+        } else if let screen = model.currentScreen as? CustomViewScreen {
+            screen.contentView(query: model.query)
         } else if model.items.isEmpty {
             emptyState
         } else if case .grid(let columns) = model.presentation {
@@ -76,20 +88,24 @@ struct LauncherView: View {
         }
     }
 
+    private var backButton: some View {
+        Button { model.pop() } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.07)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Back (esc)")
+        .accessibilityLabel("Back")
+    }
+
     private var searchBar: some View {
         HStack(spacing: 10) {
             if model.stack.count > 1 {
-                Button { model.pop() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 26, height: 26)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.07)))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Back (esc)")
-                .accessibilityLabel("Back")
+                backButton
             } else {
                 LodestarStarIcon(size: 21).foregroundStyle(.secondary)
             }

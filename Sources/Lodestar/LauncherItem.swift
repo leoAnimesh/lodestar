@@ -11,6 +11,8 @@ enum ActionOutcome {
     case stay
     /// Push a new list screen (sub-command, extension, clipboard history...).
     case push(ListScreen)
+    /// Replace the current screen with a fresh one (e.g. restart a typing test).
+    case replace(ListScreen)
     /// Show a full-text detail view.
     case detail(title: String, text: String)
     /// Keep open and flash a short message.
@@ -140,6 +142,8 @@ enum ScreenPresentation: Equatable {
     /// detail pane for the selection on the right. The screen must conform
     /// to `SplitDetailScreen`.
     case split
+    /// The screen draws its own content; it must conform to `CustomViewScreen`.
+    case custom
 }
 
 /// One level of the launcher's navigation stack.

@@ -371,6 +371,9 @@ final class LauncherViewModel: ObservableObject, ScreenHost {
             break
         case .push(let screen):
             push(screen)
+        case .replace(let screen):
+            pop()
+            push(screen)
         case .detail(let title, let text):
             showDetail(title: title, text: text)
         case .toast(let message):
